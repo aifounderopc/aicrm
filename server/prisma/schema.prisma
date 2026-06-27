@@ -1,0 +1,233 @@
+// JoyMarketing CRM 数据模型 —— 对应前端 src/types/index.ts 与 BACKEND_DESIGN.md
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  channel_admin
+  sales_admin
+  sales
+  channel
+}
+
+enum OpportunityStage {
+  reporting
+  signing
+  delivery
+  signed
+  released
+}
+
+enum CustomerSource {
+  direct
+  channel
+}
+
+enum ChannelStatus {
+  active
+  disabled
+}
+
+enum EvidenceStatus {
+  pending
+  approved
+  rejected
+}
+
+enum RenewalStatus {
+  pending
+  approved
+  rejected
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  role          UserRole
+  channelId     String?   @map("channel_id")
+  channel       Channel?  @relation(fields: [channelId], references: [id])
+  isJdManager   Boolean   @default(false) @map("is_jd_manager")
+  groupName     String?   @map("group_name")
+  disabled      Boolean   @default(false)
+  mustChangePwd Boolean   @default(true) @map("must_change_pwd")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  ownedOpportunities Opportunity[] @relation("salesOwner")
+  notifications      Notification[]
+  logs               OperationLog[]
+
+  @@index([role])
+  @@index([channelId])
+  @@map("users")
+}
+
+model Channel {
+  id            String        @id @default(cuid())
+  name          String
+  fullName      String?       @map("full_name")
+  contactName   String        @map("contact_name")
+  phone         String?
+  jdManagerName String?       @map("jd_manager_name")
+  status        ChannelStatus @default(active)
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  users         User[]
+  opportunities Opportunity[]
+
+  @@map("channels")
+}
+
+model Opportunity {
+  id                     String           @id @default(cuid())
+  customerName           String           @map("customer_name")
+  customerNameNorm       String           @map("customer_name_norm") // 撞单归一化名
+  companyName            String?          @map("company_name")
+  industry               String
+  source                 CustomerSource
+  channelId              String?          @map("channel_id")
+  channel                Channel?         @relation(fields: [channelId], references: [id])
+  channelName            String?          @map("channel_name")
+  channelManagerName     String?          @map("channel_manager_name")
+  saOwnerId              String           @map("sa_owner_id")
+  saOwnerName            String           @map("sa_owner_name")
+  salesOwnerId           String           @map("sales_owner_id")
+  salesOwnerName         String           @map("sales_owner_name")
+  salesOwner             User             @relation("salesOwner", fields: [salesOwnerId], references: [id])
+  stage                  OpportunityStage @default(reporting)
+  reportedAt             DateTime         @default(now()) @map("reported_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  releaseAt              DateTime         @map("release_at")
+  lockedPermanently      Boolean          @default(false) @map("locked_permanently")
+  amountRange            String           @map("amount_range") // under5/5to10/10to20/20to50/above50
+  firstContactDate       DateTime?        @map("first_contact_date")
+  requirementDescription String           @map("requirement_description")
+
+  contractNo      String?   @map("contract_no")
+  signedDate      DateTime? @map("signed_date")
+  signedAmount    Int?      @map("signed_amount")
+  contractFileKey String?   @map("contract_file_key")
+
+  isFrozen      Boolean   @default(false) @map("is_frozen")
+  frozenReason  String?   @map("frozen_reason")
+  releaseReason String?   @map("release_reason")
+  releasedBy    String?   @map("released_by")
+  releasedAt    DateTime? @map("released_at")
+
+  isSubsidiary      Boolean @default(false) @map("is_subsidiary")
+  parentCompanyName String? @map("parent_company_name")
+
+  contact         OpportunityContact?
+  evidenceFiles   EvidenceFile[]
+  progressReports ProgressReport[]
+  renewalRequests RenewalRequest[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([customerNameNorm, industry])
+  @@index([salesOwnerId])
+  @@index([stage])
+  @@index([releaseAt])
+  @@map("opportunities")
+}
+
+// 敏感联系人：enc_* 为 AES-256-GCM 密文，仅授权接口解密
+model OpportunityContact {
+  opportunityId String      @id @map("opportunity_id")
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  level         String
+  department    String
+  contactTypes  String[]    @map("contact_types")
+  encName       String?     @map("enc_name")    // 密文（base64）
+  encContact    String?     @map("enc_contact") // 密文（base64）
+  phoneHash     String?     @map("phone_hash")  // SHA-256，用于查重
+
+  @@map("opportunity_contacts")
+}
+
+model EvidenceFile {
+  id            String         @id @default(cuid())
+  opportunityId String         @map("opportunity_id")
+  opportunity   Opportunity    @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  name          String
+  ossKey        String         @map("oss_key")
+  size          Int
+  status        EvidenceStatus @default(pending)
+  rejectReason  String?        @map("reject_reason")
+  uploadedBy    String         @map("uploaded_by")
+  uploadedAt    DateTime       @default(now()) @map("uploaded_at")
+
+  @@map("evidence_files")
+}
+
+model ProgressReport {
+  id                String      @id @default(cuid())
+  opportunityId     String      @map("opportunity_id")
+  opportunity       Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  reporterId        String      @map("reporter_id")
+  status            String
+  lastContactDate   DateTime    @map("last_contact_date")
+  description       String
+  estimatedSignDate DateTime?   @map("estimated_sign_date")
+  needsSupport      Boolean     @default(false) @map("needs_support")
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  @@map("progress_reports")
+}
+
+model RenewalRequest {
+  id              String        @id @default(cuid())
+  opportunityId   String        @map("opportunity_id")
+  opportunity     Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  requesterId     String        @map("requester_id")
+  status          RenewalStatus @default(pending)
+  reason          String?
+  rejectionReason String?       @map("rejection_reason")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  processedAt     DateTime?     @map("processed_at")
+  processedBy     String?       @map("processed_by")
+
+  @@map("renewal_requests")
+}
+
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  body          String
+  type          String   // info | warning | success | error
+  read          Boolean  @default(false)
+  opportunityId String?  @map("opportunity_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+// 审计日志：只追加，前端无写权限
+model OperationLog {
+  id         String   @id @default(cuid())
+  actorId    String   @map("actor_id")
+  actor      User     @relation(fields: [actorId], references: [id])
+  actorName  String   @map("actor_name")
+  action     String
+  detail     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  ip         String
+  userAgent  String   @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([actorId])
+  @@index([action])
+  @@map("operation_logs")
+}
