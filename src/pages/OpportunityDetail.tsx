@@ -558,9 +558,10 @@ export default function OpportunityDetail() {
               { label: '角色', value: opp.source === 'channel' ? '渠道' : '直客销售' },
               opp.channelName ? { label: '渠道', value: opp.channelName } : null,
               { label: '报备时间', value: formatDate(opp.reportedAt) },
+              opp.source === 'channel' ? { label: 'JD 渠道经理', value: opp.channelManagerName || '—' } : null,
             ].filter(Boolean).map((item, i, arr) => item && (
               <div key={i} style={{ display: 'flex', gap: 8, padding: '7px 0', borderBottom: i < arr.length - 1 ? '1px solid rgba(14,120,160,0.08)' : 'none' }}>
-                <span style={{ fontSize: 12, color: '#7a9aaa', width: 60, flexShrink: 0 }}>{item.label}</span>
+                <span style={{ fontSize: 12, color: '#7a9aaa', width: 78, flexShrink: 0 }}>{item.label}</span>
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{item.value}</span>
               </div>
             ))}
