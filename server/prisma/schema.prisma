@@ -113,7 +113,7 @@ model Opportunity {
 
   contractNo      String?   @map("contract_no")
   signedDate      DateTime? @map("signed_date")
-  signedAmount    Int?      @map("signed_amount")
+  signedAmount    Float?    @map("signed_amount")
   contractFileKey String?   @map("contract_file_key")
 
   isFrozen      Boolean   @default(false) @map("is_frozen")
