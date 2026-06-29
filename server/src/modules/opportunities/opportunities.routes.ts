@@ -126,6 +126,11 @@ const createSchema = z.object({
   }),
   isSubsidiary: z.boolean().optional(),
   parentCompanyName: z.string().optional(),
+  evidenceFiles: z.array(z.object({
+    name: z.string().min(1),
+    url: z.string().min(1),
+    size: z.number().optional(),
+  })).optional(),
 })
 
 // POST /opportunities —— 事务内二次撞单 + 加密联系人 + 写日志
@@ -172,6 +177,14 @@ opportunityRouter.post('/', ah(async (req, res) => {
             phoneHash: input.contact.contactValue ? sha256(input.contact.contactValue) : null,
           },
         },
+        evidenceFiles: input.evidenceFiles?.length ? {
+          create: input.evidenceFiles.map(file => ({
+            name: file.name,
+            ossKey: file.url,
+            size: file.size ?? 0,
+            uploadedBy: auth.user.id,
+          })),
+        } : undefined,
       },
     })
   })

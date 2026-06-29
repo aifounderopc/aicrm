@@ -81,6 +81,7 @@ export interface EvidenceFile {
   id: string
   name: string
   url: string
+  size?: number
   uploadedAt: string
   uploadedBy: string
 }

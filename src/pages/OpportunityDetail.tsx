@@ -90,6 +90,7 @@ export default function OpportunityDetail() {
   const [decryptedContact, setDecryptedContact] = useState<{ name: string; contact?: string } | null>(null)
   const [contactLoading, setContactLoading] = useState(false)
   const [contactError, setContactError] = useState('')
+  const [previewEvidence, setPreviewEvidence] = useState<{ url: string; name: string } | null>(null)
 
   // 每天 0 点自动刷新剩余天数（页面长时间挂着也能跨天更新）
   const [, setDayTick] = useState(0)
@@ -458,14 +459,20 @@ export default function OpportunityDetail() {
               {evidenceFiles.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: 8 }}>
                   {evidenceFiles.map(f => (
-                    <div key={f.id} style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', background: '#f5f6fa', border: '1px solid #e8eaed' }}>
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => { if (f.url) setPreviewEvidence({ url: f.url, name: f.name }) }}
+                      title={f.url ? '点击放大查看' : f.name}
+                      style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', background: '#f5f6fa', border: '1px solid #e8eaed', padding: 0, cursor: f.url ? 'zoom-in' : 'default' }}
+                    >
                       {f.url
                         ? <img src={f.url} alt={f.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                         : <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                             <ImageIcon size={18} style={{ color: '#d1d5db' }} />
                             <div style={{ fontSize: 9, color: '#9ca3af', textAlign: 'center', padding: '0 4px' }}>{f.name}</div>
                           </div>}
-                    </div>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -610,6 +617,23 @@ export default function OpportunityDetail() {
 
         </div>{/* end 右列 */}
       </div>{/* end 主布局 grid */}
+
+      {previewEvidence && (
+        <div
+          onClick={() => setPreviewEvidence(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(15,23,42,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? 16 : 32, cursor: 'zoom-out' }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ maxWidth: 'min(980px, 96vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, color: 'white' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{previewEvidence.name}</div>
+              <button onClick={() => setPreviewEvidence(null)} style={{ width: 32, height: 32, borderRadius: 10, border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.16)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={16} />
+              </button>
+            </div>
+            <img src={previewEvidence.url} alt={previewEvidence.name} style={{ maxWidth: '100%', maxHeight: 'calc(92vh - 48px)', objectFit: 'contain', borderRadius: 14, background: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.35)' }} />
+          </div>
+        </div>
+      )}
 
       {/* ── Progress report modal ── */}
       {showProgressModal && (

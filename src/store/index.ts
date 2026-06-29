@@ -299,6 +299,7 @@ export const useStore = create<Store>()(
           },
           isSubsidiary: opp.isSubsidiary,
           parentCompanyName: opp.parentCompanyName,
+          evidenceFiles: opp.evidenceFiles,
           // 后端会按服务端身份覆盖报备人；以下为占位满足类型
           saOwnerId: opp.saOwnerId, saOwnerName: opp.saOwnerName,
           salesOwnerId: opp.salesOwnerId, salesOwnerName: opp.salesOwnerName,
