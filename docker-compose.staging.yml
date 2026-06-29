@@ -1,0 +1,48 @@
+# 预发环境编排：与生产隔离数据库 volume、端口和环境变量
+# 启动示例：
+#   docker compose --env-file .env.staging -f docker-compose.staging.yml -p aicrm-staging up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-joycrm_staging}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?需在 .env.staging 设置 DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-joycrm_staging}
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-joycrm_staging}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./server
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-joycrm_staging}:${DB_PASSWORD}@db:5432/${DB_NAME:-joycrm_staging}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?需在 .env.staging 设置 JWT_SECRET}
+      JWT_EXPIRES_IN: "2h"
+      FIELD_ENC_KEY: ${FIELD_ENC_KEY:?需在 .env.staging 设置 FIELD_ENC_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      PORT: "3000"
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SEED_ON_START: ${SEED_ON_START:-false}
+      NODE_ENV: production
+    expose:
+      - "3000"
+
+  web:
+    build: .
+    restart: always
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  pgdata_staging:
