@@ -334,18 +334,18 @@ export default function OpportunityDetail() {
             ))}
           </div>
 
-          {/* 联系人：职位层级 + 需求部门 重点显示 */}
+          {/* 联系人：需求部门 + 对接人职位 重点显示 */}
           <div style={{ borderTop: '1px solid #f0f2f5', paddingTop: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>职位层级</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.level}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>需求部门</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.department || '—'}</div>
                 </div>
                 <div style={{ width: 1, height: 28, background: '#e5e7eb' }} />
                 <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>需求部门</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.department || '—'}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>客户对接人职位</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.level}</div>
                 </div>
               </div>
               {/* 联系人姓名 + 联系方式 合并居右 */}
