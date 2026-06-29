@@ -98,6 +98,17 @@ export function amountLabel(r: string): string {
   return map[r] ?? r
 }
 
+export function formatSignedAmount(amount: number): string {
+  return amount.toLocaleString('zh-CN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  })
+}
+
+export function signedAmountLabel(amount: number): string {
+  return `${formatSignedAmount(amount)}万元`
+}
+
 export function roleName(role: string): string {
   const map: Record<string, string> = {
     admin: '超级管理员',

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
-import { stageName, formatDate, daysUntil, amountLabel, isAdminRole } from '../utils'
+import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
 import { ChevronLeft, Lock, FileText, Clock, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle } from 'lucide-react'
 import type { OpportunityStage, ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
@@ -383,7 +383,7 @@ export default function OpportunityDetail() {
               <div style={{ flex: 1, borderRight: '1.5px solid rgba(14,157,191,0.18)', paddingRight: 18 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#0a8aaa', marginBottom: 6, letterSpacing: '0.3px' }}>签约金额</div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: '#0a5e72', letterSpacing: '-1.5px', lineHeight: 1 }}>
-                  {opp.signedAmount?.toLocaleString()}
+                  {typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}
                   <span style={{ fontSize: 13, fontWeight: 600, marginLeft: 5, color: '#3a8a9a' }}>万元</span>
                 </div>
               </div>

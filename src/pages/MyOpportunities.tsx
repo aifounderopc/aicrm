@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useStore } from '../store'
 import { useNavigate } from 'react-router-dom'
-import { stageName, formatDate, daysUntil, amountLabel } from '../utils'
+import { stageName, formatDate, daysUntil, amountLabel, signedAmountLabel } from '../utils'
 import { Search, LayoutGrid, List, ChevronUp, ChevronDown, ChevronDown as ChevronDownIcon, SlidersHorizontal, Download } from 'lucide-react'
 import type { Opportunity } from '../types'
 import { useMobile } from '../hooks/useMobile'
@@ -10,8 +10,8 @@ import ExcelJS from 'exceljs'
 // 导出商机为带样式的 Excel（.xlsx，使用 ExcelJS）
 async function exportOpportunitiesToExcel(list: Opportunity[]) {
   const amount = (o: Opportunity) =>
-    (o.stage === 'signed' || o.stage === 'delivery') && o.signedAmount
-      ? `${(o.signedAmount / 10000).toFixed(o.signedAmount % 10000 === 0 ? 0 : 1)}万元`
+    (o.stage === 'signed' || o.stage === 'delivery') && typeof o.signedAmount === 'number'
+      ? signedAmountLabel(o.signedAmount)
       : amountLabel(o.amountRange)
   const protect = (o: Opportunity) => {
     if (o.stage === 'released') return '已释放'
@@ -201,8 +201,8 @@ function CardView({ list, onSelect, isAdmin }: { list: Opportunity[]; onSelect: 
               )}
             </div>
             <div style={{ fontSize: 12, color: sc.sub, marginBottom: 14 }}>
-              {opp.industry} · {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedAmount
-                ? `${(opp.signedAmount / 10000).toFixed(opp.signedAmount % 10000 === 0 ? 0 : 1)}万元`
+              {opp.industry} · {(opp.stage === 'signed' || opp.stage === 'delivery') && typeof opp.signedAmount === 'number'
+                ? signedAmountLabel(opp.signedAmount)
                 : amountLabel(opp.amountRange)}
             </div>
 
@@ -487,8 +487,8 @@ function ListView({
                 </td>
                 {/* Amount */}
                 <td style={{ padding: '13px 14px', fontSize: 12, color: '#4b5563' }}>
-                  {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedAmount
-                    ? <span style={{ fontWeight: 600, color: '#059669' }}>{(opp.signedAmount / 10000).toFixed(opp.signedAmount % 10000 === 0 ? 0 : 1)}万元</span>
+                  {(opp.stage === 'signed' || opp.stage === 'delivery') && typeof opp.signedAmount === 'number'
+                    ? <span style={{ fontWeight: 600, color: '#059669' }}>{signedAmountLabel(opp.signedAmount)}</span>
                     : amountLabel(opp.amountRange)}
                 </td>
                 {/* Reported at */}
