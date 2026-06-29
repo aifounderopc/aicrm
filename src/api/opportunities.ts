@@ -79,6 +79,6 @@ export const opportunityApi = {
     api.post<void>(`/opportunities/${id}/renewals/${renewalId}/reject`, { reason }),
 
   // 进展上报
-  addProgress: (id: string, report: Omit<ProgressReport, 'id' | 'createdAt' | 'opportunityId'>) =>
+  addProgress: (id: string, report: Omit<ProgressReport, 'id' | 'createdAt' | 'opportunityId' | 'reporterId'>) =>
     api.post<ProgressReport>(`/opportunities/${id}/progress`, report),
 }

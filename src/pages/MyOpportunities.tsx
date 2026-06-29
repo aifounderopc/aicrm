@@ -135,7 +135,7 @@ const PIPELINE_LABEL: Record<string, string> = {
 // ─── Sort key type ────────────────────────────────────────────────────────────
 type SortKey = 'reportedAt' | 'releaseAt' | 'customerName' | 'amountRange'
 
-const amountOrder: Record<string, number> = { under50: 0, '50to200': 1, above200: 2 }
+const amountOrder: Record<string, number> = { under5: 0, '5to10': 1, '10to20': 2, '20to50': 3, above50: 4 }
 
 function sortOpps(list: Opportunity[], key: SortKey, asc: boolean) {
   return [...list].sort((a, b) => {

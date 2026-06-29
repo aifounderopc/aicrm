@@ -55,6 +55,46 @@ opportunityRouter.post('/check-collision', ah(async (req, res) => {
   res.json(result)
 }))
 
+// GET /opportunities/:id —— 商机详情，按当前身份校验可见范围
+opportunityRouter.get('/:id', ah(async (req, res) => {
+  const auth = req.auth!
+  const opp = await prisma.opportunity.findUnique({
+    where: { id: req.params.id },
+    include: {
+      contact: true,
+      evidenceFiles: { orderBy: { uploadedAt: 'desc' } },
+      progressReports: { orderBy: { createdAt: 'desc' } },
+      renewalRequests: { orderBy: { createdAt: 'desc' } },
+    },
+  })
+  if (!opp) throw new ApiError(404, '商机不存在')
+
+  const canView =
+    isAdminRole(auth.user.role) ||
+    opp.salesOwnerId === auth.user.id ||
+    (auth.user.role === 'channel' && opp.channelId === auth.user.channelId)
+  if (!canView) throw new ApiError(403, '无权查看该商机')
+
+  res.json({
+    ...opp,
+    contact: opp.contact && {
+      level: opp.contact.level,
+      department: opp.contact.department,
+      contactTypes: opp.contact.contactTypes,
+      encryptedName: opp.contact.encName ? 'encrypted' : undefined,
+      encryptedContact: opp.contact.encContact ? 'encrypted' : undefined,
+      phoneHash: opp.contact.phoneHash ?? undefined,
+    },
+    evidenceFiles: opp.evidenceFiles.map(f => ({
+      id: f.id,
+      name: f.name,
+      url: f.ossKey,
+      uploadedAt: f.uploadedAt,
+      uploadedBy: f.uploadedBy,
+    })),
+  })
+}))
+
 const createSchema = z.object({
   customerName: z.string().min(1),
   companyName: z.string().optional(),

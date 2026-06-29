@@ -5,7 +5,6 @@ import Query from './pages/Query'
 import Report from './pages/Report'
 import MyOpportunities from './pages/MyOpportunities'
 import Admin from './pages/Admin'
-import AIAssistant from './pages/AIAssistant'
 import OpportunityDetail from './pages/OpportunityDetail'
 import LogsPage from './pages/Logs'
 import Login from './pages/Login'
@@ -48,7 +47,6 @@ export default function App() {
           <Route path="/my" element={<MyOpportunities />} />
           <Route path="/opportunity/:id" element={<OpportunityDetail />} />
           <Route path="/admin" element={<Admin />} />
-          <Route path="/ai" element={<AIAssistant />} />
           <Route path="/logs" element={<LogsPage />} />
         </Routes>
       </Layout>

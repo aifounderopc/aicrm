@@ -1,31 +1,30 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Search, PlusCircle, List, Settings, Bot, FileText } from 'lucide-react'
+import { LayoutDashboard, Search, PlusCircle, List, Settings, FileText } from 'lucide-react'
 import { useStore } from '../../store'
 import { roleName } from '../../utils'
+import type { UserRole } from '../../types'
 
-const navItems = {
-  admin: [
-    { to: '/', icon: LayoutDashboard, label: '首页看板' },
-    { to: '/query', icon: Search, label: '商机查询' },
-    { to: '/report', icon: PlusCircle, label: '报备商机' },
-    { to: '/my', icon: List, label: '我的商机' },
-    { to: '/admin', icon: Settings, label: '管理后台' },
-    { to: '/ai', icon: Bot, label: 'AI 助手' },
-  ],
-  sales: [
-    { to: '/', icon: LayoutDashboard, label: '首页看板' },
-    { to: '/query', icon: Search, label: '商机查询' },
-    { to: '/report', icon: PlusCircle, label: '报备商机' },
-    { to: '/my', icon: List, label: '我的商机' },
-    { to: '/ai', icon: Bot, label: 'AI 助手' },
-  ],
-  channel: [
-    { to: '/', icon: LayoutDashboard, label: '首页看板' },
-    { to: '/query', icon: Search, label: '商机查询' },
-    { to: '/report', icon: PlusCircle, label: '报备商机' },
-    { to: '/my', icon: List, label: '我的商机' },
-    { to: '/ai', icon: Bot, label: 'AI 助手' },
-  ],
+const userNavItems = [
+  { to: '/', icon: LayoutDashboard, label: '首页看板' },
+  { to: '/query', icon: Search, label: '商机查询' },
+  { to: '/report', icon: PlusCircle, label: '报备商机' },
+  { to: '/my', icon: List, label: '我的商机' },
+]
+
+const adminNavItems = [
+  { to: '/', icon: LayoutDashboard, label: '首页看板' },
+  { to: '/query', icon: Search, label: '商机查询' },
+  { to: '/report', icon: PlusCircle, label: '报备商机' },
+  { to: '/my', icon: List, label: '我的商机' },
+  { to: '/admin', icon: Settings, label: '管理后台' },
+]
+
+const navItems: Record<UserRole, typeof userNavItems> = {
+  admin: adminNavItems,
+  channel_admin: adminNavItems,
+  sales_admin: adminNavItems,
+  sales: userNavItems,
+  channel: userNavItems,
 }
 
 export default function Sidebar() {
