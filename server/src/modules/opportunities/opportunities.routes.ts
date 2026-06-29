@@ -13,6 +13,39 @@ import { writeLog } from '../../util/audit.js'
 export const opportunityRouter = Router()
 opportunityRouter.use(requireAuth)
 
+const opportunityInclude = {
+  contact: true,
+  evidenceFiles: { orderBy: { uploadedAt: 'desc' as const } },
+  progressReports: { orderBy: { createdAt: 'desc' as const } },
+  renewalRequests: { orderBy: { createdAt: 'desc' as const } },
+}
+
+type OpportunityWithRelations = Awaited<ReturnType<typeof prisma.opportunity.findFirst<typeof opportunityIncludeArgs>>>
+const opportunityIncludeArgs = { include: opportunityInclude }
+
+function toClientOpportunity(opp: NonNullable<OpportunityWithRelations>) {
+  return {
+    ...opp,
+    contact: opp.contact && {
+      level: opp.contact.level,
+      department: opp.contact.department,
+      contactTypes: opp.contact.contactTypes,
+      encryptedName: opp.contact.encName ? 'encrypted' : undefined,
+      encryptedContact: opp.contact.encContact ? 'encrypted' : undefined,
+      phoneHash: opp.contact.phoneHash ?? undefined,
+    },
+    evidenceFiles: opp.evidenceFiles.map(f => ({
+      id: f.id,
+      name: f.name,
+      url: f.ossKey,
+      uploadedAt: f.uploadedAt,
+      uploadedBy: f.uploadedBy,
+    })),
+    progressReports: opp.progressReports,
+    renewalRequests: opp.renewalRequests,
+  }
+}
+
 // 按当前身份构造可见范围：销售/渠道只见自己名下，管理类见全量
 function visibilityWhere(auth: NonNullable<import('../../middleware/auth.js').AuthContext>) {
   if (isAdminRole(auth.user.role)) return {}
@@ -33,10 +66,10 @@ opportunityRouter.get('/', ah(async (req, res) => {
   if (q) where.customerName = { contains: q, mode: 'insensitive' }
 
   const [items, total] = await Promise.all([
-    prisma.opportunity.findMany({ where, orderBy: { reportedAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.opportunity.findMany({ where, include: opportunityInclude, orderBy: { reportedAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
     prisma.opportunity.count({ where }),
   ])
-  res.json({ items, total, page, pageSize })
+  res.json({ items: items.map(toClientOpportunity), total, page, pageSize })
 }))
 
 // 活跃商机候选（撞单用）
@@ -60,12 +93,7 @@ opportunityRouter.get('/:id', ah(async (req, res) => {
   const auth = req.auth!
   const opp = await prisma.opportunity.findUnique({
     where: { id: req.params.id },
-    include: {
-      contact: true,
-      evidenceFiles: { orderBy: { uploadedAt: 'desc' } },
-      progressReports: { orderBy: { createdAt: 'desc' } },
-      renewalRequests: { orderBy: { createdAt: 'desc' } },
-    },
+    include: opportunityInclude,
   })
   if (!opp) throw new ApiError(404, '商机不存在')
 
@@ -75,24 +103,7 @@ opportunityRouter.get('/:id', ah(async (req, res) => {
     (auth.user.role === 'channel' && opp.channelId === auth.user.channelId)
   if (!canView) throw new ApiError(403, '无权查看该商机')
 
-  res.json({
-    ...opp,
-    contact: opp.contact && {
-      level: opp.contact.level,
-      department: opp.contact.department,
-      contactTypes: opp.contact.contactTypes,
-      encryptedName: opp.contact.encName ? 'encrypted' : undefined,
-      encryptedContact: opp.contact.encContact ? 'encrypted' : undefined,
-      phoneHash: opp.contact.phoneHash ?? undefined,
-    },
-    evidenceFiles: opp.evidenceFiles.map(f => ({
-      id: f.id,
-      name: f.name,
-      url: f.ossKey,
-      uploadedAt: f.uploadedAt,
-      uploadedBy: f.uploadedBy,
-    })),
-  })
+  res.json(toClientOpportunity(opp))
 }))
 
 const createSchema = z.object({

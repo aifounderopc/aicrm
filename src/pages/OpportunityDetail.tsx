@@ -118,7 +118,11 @@ export default function OpportunityDetail() {
   const canEdit = opp.salesOwnerId === currentUser.id || isAdmin
   const isOwner = opp.salesOwnerId === currentUser.id
   const sc = stageConfig[opp.stage] || stageConfig.released
-  const pendingRenewals = opp.renewalRequests.filter(r => r.status === 'pending')
+  const contact = opp.contact ?? { level: '—', department: '—', contactTypes: [] }
+  const progressReports = opp.progressReports ?? []
+  const renewalRequests = opp.renewalRequests ?? []
+  const evidenceFiles = opp.evidenceFiles ?? []
+  const pendingRenewals = renewalRequests.filter(r => r.status === 'pending')
   const currentPipelineIdx = pipelineOrder[opp.stage] ?? 0
 
   const submitReport = () => {
@@ -305,24 +309,24 @@ export default function OpportunityDetail() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>职位层级</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{opp.contact.level}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.level}</div>
                 </div>
                 <div style={{ width: 1, height: 28, background: '#e5e7eb' }} />
                 <div>
                   <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>需求部门</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{opp.contact.department || '—'}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.department || '—'}</div>
                 </div>
               </div>
               {/* 联系人姓名 + 联系方式 合并居右 */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-                {(isOwner || isAdmin) && opp.contact.encryptedName && (
+                {(isOwner || isAdmin) && contact.encryptedName && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Lock size={10} style={{ color: '#9ca3af' }} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{opp.contact.encryptedName}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{contact.encryptedName}</span>
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 4 }}>
-                  {(opp.contact.contactTypes || []).map(t => (
+                  {contact.contactTypes.map(t => (
                     <span key={t} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, border: '1px solid #e5e7eb', color: '#9ca3af' }}>
                       {t === 'phone' ? '手机' : t === 'wechat' ? '微信' : '邮箱'}
                     </span>
@@ -408,7 +412,7 @@ export default function OpportunityDetail() {
           <div style={{ ...card, marginBottom: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={cardTitle}>举证材料</div>
-              <span style={{ fontSize: 11, color: '#9ca3af' }}>{opp.evidenceFiles?.length || 0} 份附件</span>
+              <span style={{ fontSize: 11, color: '#9ca3af' }}>{evidenceFiles.length} 份附件</span>
             </div>
             <div style={{ marginBottom: 18 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.4px', marginBottom: 8 }}>客户需求描述</div>
@@ -416,9 +420,9 @@ export default function OpportunityDetail() {
             </div>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.4px', marginBottom: 10 }}>客户沟通 / 拜访举证</div>
-              {opp.evidenceFiles && opp.evidenceFiles.length > 0 ? (
+              {evidenceFiles.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: 8 }}>
-                  {opp.evidenceFiles.map(f => (
+                  {evidenceFiles.map(f => (
                     <div key={f.id} style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', background: '#f5f6fa', border: '1px solid #e8eaed' }}>
                       {f.url
                         ? <img src={f.url} alt={f.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -538,14 +542,14 @@ export default function OpportunityDetail() {
               </button>
             )}
           </div>
-          {opp.progressReports.length === 0 ? (
+          {progressReports.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 120, color: '#d1d5db', gap: 8 }}>
               <Send size={22} />
               <span style={{ fontSize: 13 }}>暂无推进记录</span>
             </div>
           ) : (
             <div>
-              {opp.progressReports.slice().reverse().map((r, idx, arr) => {
+              {progressReports.slice().reverse().map((r, idx, arr) => {
                 const meta = statusMeta[r.status] || statusMeta.normal
                 const isLast = idx === arr.length - 1
                 return (
