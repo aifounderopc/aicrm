@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
-import { stageName, formatDate, daysUntil, amountLabel } from '../utils'
+import { stageName, formatDate, daysUntil, amountLabel, isAdminRole } from '../utils'
 import { ChevronLeft, Lock, FileText, Clock, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle } from 'lucide-react'
 import type { OpportunityStage, ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
+import { opportunityApi, ApiError } from '../api'
 
 const stageConfig: Record<string, { bg: string; text: string; bar: string }> = {
   reporting: { bg: '#f3f4f6', text: '#374151', bar: '#9ca3af' },
@@ -86,6 +87,9 @@ export default function OpportunityDetail() {
   const [rejectRenewalReason, setRejectRenewalReason] = useState('')
   const [showAdminModal, setShowAdminModal] = useState(false)
   const [showStageMenu, setShowStageMenu] = useState(false)
+  const [decryptedContact, setDecryptedContact] = useState<{ name: string; contact?: string } | null>(null)
+  const [contactLoading, setContactLoading] = useState(false)
+  const [contactError, setContactError] = useState('')
 
   // 每天 0 点自动刷新剩余天数（页面长时间挂着也能跨天更新）
   const [, setDayTick] = useState(0)
@@ -99,6 +103,32 @@ export default function OpportunityDetail() {
     }, nextMidnight.getTime() - now.getTime())
     return () => { clearTimeout(timeout); if (interval) clearInterval(interval) }
   }, [])
+
+  const canViewContact = !!opp && (opp.salesOwnerId === currentUser.id || isAdminRole(currentUser.role))
+
+  useEffect(() => {
+    if (!opp || !canViewContact || !opp.contact?.encryptedName) {
+      setDecryptedContact(null)
+      setContactError('')
+      return
+    }
+
+    let cancelled = false
+    setContactLoading(true)
+    setContactError('')
+    opportunityApi.getContact(opp.id)
+      .then(contact => {
+        if (!cancelled) setDecryptedContact(contact)
+      })
+      .catch(e => {
+        if (!cancelled) setContactError(e instanceof ApiError ? e.message : '联系人解密失败')
+      })
+      .finally(() => {
+        if (!cancelled) setContactLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [opp?.id, canViewContact, opp?.contact?.encryptedName])
 
   if (!opp) {
     return (
@@ -319,11 +349,16 @@ export default function OpportunityDetail() {
               </div>
               {/* 联系人姓名 + 联系方式 合并居右 */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-                {(isOwner || isAdmin) && contact.encryptedName && (
+                {canViewContact && contact.encryptedName && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Lock size={10} style={{ color: '#9ca3af' }} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{contact.encryptedName}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+                      {contactLoading ? '解密中…' : decryptedContact?.name || (contactError ? '解密失败' : '已加密')}
+                    </span>
                   </div>
+                )}
+                {canViewContact && decryptedContact?.contact && (
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{decryptedContact.contact}</div>
                 )}
                 <div style={{ display: 'flex', gap: 4 }}>
                   {contact.contactTypes.map(t => (
