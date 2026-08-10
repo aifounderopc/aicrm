@@ -16,7 +16,8 @@ async function main() {
 
   for (const u of users) {
     await prisma.user.upsert({
-      where: { email: u.email },
+      // 固定 ID 是种子账号的稳定标识；预发环境可能已修改邮箱或姓名。
+      where: { id: u.id },
       update: {},
       create: {
         id: u.id, name: u.name, email: u.email, role: u.role,
@@ -28,6 +29,7 @@ async function main() {
   // 预发/演示环境的 Top 品牌商机：固定 ID + upsert，可安全重复执行。
   const ago = (days: number) => new Date(Date.now() - days * 86400_000)
   const later = (days: number) => new Date(Date.now() + days * 86400_000)
+  const mockOwner = await prisma.user.findUniqueOrThrow({ where: { id: 'u_yd' } })
   const mockOpportunities: Array<{
     id: string; customerName: string; companyName: string; industry: string
     stage: OpportunityStage; amountRange: string; department: string; requirement: string
@@ -67,7 +69,8 @@ async function main() {
       create: {
         id: opp.id, customerName: opp.customerName, customerNameNorm: opp.customerName.toLowerCase(),
         companyName: opp.companyName, industry: opp.industry, source: 'direct',
-        saOwnerId: 'u_yd', saOwnerName: '严頤', salesOwner: { connect: { id: 'u_yd' } }, salesOwnerName: '严頤',
+        saOwnerId: mockOwner.id, saOwnerName: mockOwner.name,
+        salesOwner: { connect: { id: mockOwner.id } }, salesOwnerName: mockOwner.name,
         stage: opp.stage, reportedAt: ago(25 - index), releaseAt: locked ? later(365) : later(5 + index),
         lockedPermanently: locked, amountRange: opp.amountRange, firstContactDate: ago(28 - index),
         requirementDescription: opp.requirement,
