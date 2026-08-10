@@ -30,6 +30,15 @@ const normalizeConnectors = (items: Connector[]) => items.map(item => {
 
 const iconFor = (id: string) => id === 'email' ? Mail : id === 'meeting' ? Video : id === 'form' ? Users : MessageSquare
 
+function ConnectorBrandLogo({ id }: { id: string }) {
+  if (id === 'feishu') return <svg className="connector-brand-logo" viewBox="0 0 48 48" aria-label="飞书 Logo"><path fill="#3370ff" d="M9 25.5 24.2 9.8c1.4-1.5 3.8-1.5 5.2 0l3.2 3.3-15.8 16.4H9v-4Z"/><path fill="#00d6b9" d="m15.7 31 17-17.6 4.3 4.4-17 17.6h-4.3V31Z"/><path fill="#ff5b67" d="M9 31h12.4l-6.2 6.4c-1.4 1.5-3.8 1.5-5.2 0L7 34.2 9 31Z"/><path fill="#ffc60a" d="m30.6 28.8 6.4-6.6 3.8 4c1.4 1.4 1.4 3.8 0 5.2l-3.1 3.2-7.1-5.8Z"/></svg>
+  if (id === 'wecom') return <svg className="connector-brand-logo" viewBox="0 0 48 48" aria-label="企微 Logo"><path fill="#2aae67" d="M5 19.4C5 11.5 12.6 5 22 5s17 6.5 17 14.4-7.6 14.4-17 14.4c-1.8 0-3.5-.2-5.1-.7L9 37l2.3-6.4C7.4 28 5 24 5 19.4Z"/><path fill="#1686e8" d="M24 26.5c0-6.3 6-11.5 13.4-11.5 1.8 0 3.5.3 5.1.8.3 1.1.5 2.3.5 3.6 0 7.9-7.6 14.4-17 14.4h-.7c-.8-2.2-1.3-4.7-1.3-7.3Z"/><circle cx="16" cy="19" r="2" fill="white"/><circle cx="26" cy="19" r="2" fill="white"/></svg>
+  if (id === 'dingtalk') return <svg className="connector-brand-logo" viewBox="0 0 48 48" aria-label="钉钉 Logo"><path fill="#1677ff" d="M38.7 8.5c-7.1 2.8-19.3 1.7-27.9.4l8.1 7.7-5.8 1.4 6.4 6.1-4.1 1.6 7.2 5.1-4.7 8.7c-.4.8.6 1.6 1.3 1l10.1-8.7c5.8-5 9.4-12.6 10.7-21.4.2-1.3-.3-2.3-1.3-1.9Z"/><path fill="white" d="m22 17.2 9.3-1.6-5.8 6.6 5.3.9-8.3 7 2.8-5.7-5-1.7 4.4-2.5-2.7-3Z"/></svg>
+  if (id === 'jingme') return <span className="connector-brand-logo jingme-logo" aria-label="京 Me Logo"><b>京</b><i>ME</i></span>
+  const Icon = iconFor(id)
+  return <Icon size={22} />
+}
+
 export default function Connectors() {
   const currentUser = useStore(s => s.currentUser)
   const [connectors, setConnectors] = useState<Connector[]>(() => {
@@ -89,7 +98,7 @@ export default function Connectors() {
       <label><span>默认策略</span><select value={policy.mode} onChange={e => setPolicy(current => ({ ...current, mode: e.target.value }))}><option>提醒模式</option><option>助手模式</option><option>自动模式</option></select><em>控制 AI 销售伙伴的自动化程度</em></label>
       <label><span>商机报备模式</span><select value={setup.reportMode} onChange={e => setSetup(current => ({ ...current, reportMode: e.target.value }))}><option>人工确认后报备</option><option>AI 直接报备</option></select><em>正式报备仍会执行撞单与权限校验</em></label>
     </div>
-    if (wizardStep === 1) return <div className="connector-wizard-channel-grid">{connectors.map(item => { const Icon = iconFor(item.id); return <article key={item.id} className={item.status}><div><span><Icon size={19} /></span><div><strong>{item.name}</strong><small>{item.type}</small></div><b>{item.status === 'connected' ? '已连接' : '未连接'}</b></div><p>{item.desc}</p><button className={item.status === 'connected' ? 'secondary' : 'primary'} onClick={() => authorize(item.id)}>{item.status === 'connected' ? '重新测试' : `授权${item.name}`}</button></article> })}</div>
+    if (wizardStep === 1) return <div className="connector-wizard-channel-grid">{connectors.map(item => <article key={item.id} className={`${item.status} connector-channel-${item.id}`}><div><span><ConnectorBrandLogo id={item.id} /></span><div><strong>{item.name}</strong>{item.type !== 'IM' && <small>{item.type}</small>}</div><b>{item.status === 'connected' ? '已连接' : '未连接'}</b></div><p>{item.desc}</p><button className={item.status === 'connected' ? 'secondary' : 'primary'} onClick={() => authorize(item.id)}>{item.status === 'connected' ? '重新测试' : `授权${item.name}`}</button></article>)}</div>
     if (wizardStep === 2) return <div className="connector-wizard-fields">
       <label><span>追踪群聊</span><textarea value={setup.trackingGroups} onChange={e => setSetup(current => ({ ...current, trackingGroups: e.target.value }))} /><em>多个群聊用顿号分隔</em></label>
       <label><span>重点客户</span><textarea value={setup.keyAccounts} onChange={e => setSetup(current => ({ ...current, keyAccounts: e.target.value }))} /><em>优先识别这些客户的商机信号</em></label>
@@ -108,9 +117,9 @@ export default function Connectors() {
   const renderGroup = (title: string, subtitle: string, ids: string[]) => <section className="connector-group">
     <div className="connector-group-title"><div><h2>{title}</h2><p>{subtitle}</p></div><span>{connectors.filter(c => ids.includes(c.id) && c.status === 'connected').length}/{ids.length} 已连接</span></div>
     <div className="connector-list">{connectors.filter(c => ids.includes(c.id)).map(item => {
-      const Icon = iconFor(item.id); const isSyncing = syncing.includes(item.id); const open = expanded === item.id
-      return <article key={item.id} className={`connector-card ${item.syncStatus}`}>
-        <div className="connection-head"><div className="connector-identity"><div className="connector-logo"><Icon size={22} /></div><div><span>{item.type}</span><h3>{item.name}</h3></div></div><div className="connector-state"><span className={`connector-status ${item.status}`}>{item.status === 'connected' ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}{item.status === 'connected' ? '已连接' : '未连接'}</span><span className={`sync-status ${item.syncStatus}`}>{item.syncStatus === 'healthy' ? '同步正常' : item.syncStatus === 'warning' ? '待处理' : '等待授权'}</span></div></div>
+      const isSyncing = syncing.includes(item.id); const open = expanded === item.id
+      return <article key={item.id} className={`connector-card connector-channel-${item.id} ${item.syncStatus}`}>
+        <div className="connection-head"><div className="connector-identity"><div className="connector-logo"><ConnectorBrandLogo id={item.id} /></div><div>{item.type !== 'IM' && <span>{item.type}</span>}<h3>{item.name}</h3></div></div><div className="connector-state"><span className={`connector-status ${item.status}`}>{item.status === 'connected' ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}{item.status === 'connected' ? '已连接' : '未连接'}</span><span className={`sync-status ${item.syncStatus}`}>{item.syncStatus === 'healthy' ? '同步正常' : item.syncStatus === 'warning' ? '待处理' : '等待授权'}</span></div></div>
         <p className="connector-description">{item.desc}</p>
         <div className="connector-meta"><div><span>授权账号</span><strong>{item.authUser}</strong></div><div><span>最近同步</span><strong>{item.lastSync}</strong></div><div><span>下次同步</span><strong>{item.nextSync}</strong></div><div><span>识别信号</span><strong>{item.signalCount} 条</strong></div></div>
         <div className={`connector-scope ${open ? 'open' : ''}`}><div><span>同步范围</span><p>{item.scope}</p></div><div><span>共享范围</span><p>{item.sharedTo}</p></div><div><span>已处理记录</span><p>{item.syncedItems} 条</p></div></div>

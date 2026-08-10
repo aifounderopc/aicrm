@@ -331,10 +331,27 @@ body.ai-partner-open { overflow: hidden; }
 .connector-group { padding: 0 18px 18px; }
 .connector-group-title { margin: 0 -18px 15px; }
 .connector-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; padding: 0; }
-.connector-card, .connector-card:last-child { min-width: 0; padding: 17px; border: 1px solid rgba(14,120,150,.09); border-radius: 17px; background: rgba(255,255,255,.72); box-shadow: 0 7px 22px rgba(40,110,130,.06); }
+.connector-card, .connector-card:last-child { position: relative; min-width: 0; overflow: hidden; padding: 17px; border: 1px solid rgba(14,120,150,.09); border-radius: 17px; background: rgba(255,255,255,.72); box-shadow: 0 7px 22px rgba(40,110,130,.06); }
 .connector-card.healthy { background: linear-gradient(135deg,rgba(237,252,245,.88),rgba(255,255,255,.76)); }
 .connector-card.warning { background: linear-gradient(135deg,rgba(255,248,226,.9),rgba(255,255,255,.76)); }
 .connector-card.pending_auth { background: linear-gradient(135deg,rgba(238,248,255,.92),rgba(255,255,255,.78)); }
+.connector-brand-logo { width: 28px; height: 28px; display: block; flex-shrink: 0; }
+.jingme-logo { position: relative; display: flex; align-items: center; justify-content: center; color: white; background: #e1251b; border-radius: 9px; font-style: normal; }
+.jingme-logo b { font-size: 16px; line-height: 1; }
+.jingme-logo i { position: absolute; right: -4px; bottom: -3px; padding: 1px 3px; color: #e1251b; background: white; border: 1px solid rgba(225,37,27,.2); border-radius: 4px; font-size: 5px; font-style: normal; font-weight: 850; }
+.connector-card.connector-channel-feishu { border-color: rgba(51,112,255,.2); background: linear-gradient(135deg,rgba(233,241,255,.94),rgba(238,255,251,.82) 54%,rgba(255,255,255,.8)); }
+.connector-card.connector-channel-wecom { border-color: rgba(42,174,103,.2); background: linear-gradient(135deg,rgba(235,252,243,.94),rgba(235,246,255,.86) 58%,rgba(255,255,255,.8)); }
+.connector-card.connector-channel-dingtalk { border-color: rgba(22,119,255,.2); background: linear-gradient(135deg,rgba(234,244,255,.96),rgba(247,251,255,.86)); }
+.connector-card.connector-channel-jingme { border-color: rgba(225,37,27,.18); background: linear-gradient(135deg,rgba(255,239,238,.96),rgba(255,249,244,.88)); }
+.connector-card.connector-channel-feishu::before, .connector-card.connector-channel-wecom::before, .connector-card.connector-channel-dingtalk::before, .connector-card.connector-channel-jingme::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; }
+.connector-card.connector-channel-feishu::before { background: linear-gradient(#3370ff,#00d6b9); }
+.connector-card.connector-channel-wecom::before { background: linear-gradient(#2aae67,#1686e8); }
+.connector-card.connector-channel-dingtalk::before { background: #1677ff; }
+.connector-card.connector-channel-jingme::before { background: #e1251b; }
+.connector-channel-feishu .connector-logo { color: #3370ff; background: rgba(255,255,255,.78); border-color: rgba(51,112,255,.14); }
+.connector-channel-wecom .connector-logo { color: #2aae67; background: rgba(255,255,255,.78); border-color: rgba(42,174,103,.14); }
+.connector-channel-dingtalk .connector-logo { color: #1677ff; background: rgba(255,255,255,.78); border-color: rgba(22,119,255,.14); }
+.connector-channel-jingme .connector-logo { color: #e1251b; background: rgba(255,255,255,.82); border-color: rgba(225,37,27,.13); }
 .connection-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .connector-identity { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .connector-identity > div:last-child { min-width: 0; }
@@ -398,8 +415,13 @@ body.ai-partner-open { overflow: hidden; }
 .connector-wizard-checks b { font-size: 10px; }
 .connector-wizard-channel-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
 .connector-wizard-channel-grid article { min-width: 0; padding: 13px; border: 1px solid rgba(14,120,150,.09); background: white; border-radius: 13px; }
+.connector-wizard-channel-grid article.connector-channel-feishu { border-color: rgba(51,112,255,.16); background: #f2f6ff; }
+.connector-wizard-channel-grid article.connector-channel-wecom { border-color: rgba(42,174,103,.16); background: #f0fbf5; }
+.connector-wizard-channel-grid article.connector-channel-dingtalk { border-color: rgba(22,119,255,.16); background: #f1f7ff; }
+.connector-wizard-channel-grid article.connector-channel-jingme { border-color: rgba(225,37,27,.14); background: #fff4f3; }
 .connector-wizard-channel-grid article > div { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; }
-.connector-wizard-channel-grid article > div > span { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: #0c829c; background: #ebf8fa; border-radius: 9px; }
+.connector-wizard-channel-grid article > div > span { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; color: #0c829c; background: rgba(255,255,255,.78); border-radius: 10px; }
+.connector-wizard-channel-grid .connector-brand-logo { width: 26px; height: 26px; }
 .connector-wizard-channel-grid strong, .connector-wizard-channel-grid small { display: block; }
 .connector-wizard-channel-grid strong { color: #214a55; font-size: 12px; }
 .connector-wizard-channel-grid small { color: #8aa1a7; font-size: 8px; }
