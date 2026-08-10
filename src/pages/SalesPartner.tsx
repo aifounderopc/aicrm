@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, BarChart3, Bot, CalendarDays, Check, ChevronRight, Clock3, Mail, MessageCircle, PanelRight, Send, Sparkles, TrendingUp, TriangleAlert, Users, X } from 'lucide-react'
+import { ArrowRight, BarChart3, Bot, CalendarDays, Check, ChevronRight, Clock3, Mail, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, Users, X } from 'lucide-react'
 import { useStore } from '../store'
 import { amountLabel, daysUntil } from '../utils'
 import type { Opportunity } from '../types'
@@ -101,6 +101,11 @@ export default function SalesPartner() {
     return result
   }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6)
 
+  const openSide = (tab: SideTab) => {
+    setSideTab(tab)
+    setSideOpen(true)
+  }
+
   const ask = (question = input) => {
     const q = question.trim()
     if (!q) return
@@ -124,14 +129,13 @@ export default function SalesPartner() {
   const renderSideList = () => {
     if (sideTab === 'suggestions') return suggestions.map(item => (
       <button key={item.id} className="ai-side-item suggestions" onClick={() => navigate(`/opportunity/${item.opp.id}`)}>
-        <span className="suggestion"><Sparkles size={13} /></span><div><strong>{item.title}</strong><p>{item.opp.customerName} · {item.action}</p></div><ChevronRight size={14} />
+        <strong>{item.opp.customerName}</strong><p>{item.reason} · {item.action}</p>
       </button>
     ))
     const list = sideTab === 'processing' ? processing : stable
     return list.map(opp => (
       <button key={opp.id} className={`ai-side-item ${sideTab}`} onClick={() => navigate(`/opportunity/${opp.id}`)}>
-        <span className={sideTab}><>{sideTab === 'processing' ? <TriangleAlert size={13} /> : <TrendingUp size={13} />}</></span>
-        <div><strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · 健康度 {scoreFor(opp)} 分</p></div><ChevronRight size={14} />
+        <strong>{opp.customerName}</strong><p>{sideTab === 'processing' ? `${stageText(opp.stage)}待确认 · 建议补齐关键字段并尽快完成审批处理。` : `${stageText(opp.stage)} · 健康度 ${scoreFor(opp)} 分，按当前节奏持续推进。`}</p>
       </button>
     ))
   }
@@ -148,21 +152,21 @@ export default function SalesPartner() {
 
       <section className="ai-conversation glass-panel">
         <header className="ai-conversation-head">
-          <button className="ai-head-action" onClick={() => setDailyOpen(true)}><CalendarDays size={15} /><span><strong>商机日报</strong><small>查看昨日汇总</small></span></button>
+          <button className="ai-head-action" onClick={() => setDailyOpen(true)}><CalendarDays size={15} /><strong>商机日报</strong></button>
           <button className={`ai-side-toggle ${sideOpen ? 'active' : ''}`} onClick={() => setSideOpen(v => !v)} aria-label="展开销售伙伴侧边栏" title="侧边栏"><PanelRight size={17} /></button>
         </header>
         <div className="ai-conversation-main">
           <div className="ai-chat-column">
             <div className="ai-chat-scroll">
               <div className="ai-greeting"><div className="ai-bot-avatar"><Sparkles size={21} /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
-              <div className="ai-summary-card"><div className="ai-summary-intro"><Bot size={18} /><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{processing.length}</b> 个需处理项。</p></div><div className="ai-snapshot-grid"><div className="progress"><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>推进中</small><strong>{active.filter(o => ['reporting', 'signing'].includes(o.stage)).length}</strong></div><em>持续跟进</em></div><div className="urgent"><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需处理</small><strong>{processing.length}</strong></div><em>优先处理</em></div><div className="stable"><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>稳定推荐</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></div></div></div>
+              <div className="ai-summary-card"><div className="ai-summary-intro"><Bot size={18} /><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批项</small><strong>{processing.length}</strong></div><em>待处理</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); if (item.id === 'priority') ask('帮我写跟进话术'); else navigate(`/opportunity/${item.opp.id}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已处理</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
               {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <Bot size={16} /> : <Users size={16} />}</span><p>{message.text}</p></div>)}
             </div>
             <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} onClick={() => ask(q)}>{q}</button>)}</div><div className="ai-inputbar"><MessageCircle size={18} /><input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && ask()} placeholder="你有什么商机进展 / 推进问题，都可以问我…" /><button onClick={() => ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note"><Mail size={12} /> AI 建议仅基于你有权访问的 CRM 与连接器数据 <button onClick={() => navigate('/connectors')}>管理连接器 <ArrowRight size={12} /></button></div></div>
           </div>
-          {sideOpen && <aside className="ai-detail-side"><div className="ai-side-head"><div><strong>销售伙伴详情</strong><span>实时整理的全部内容</span></div><button onClick={() => setSideOpen(false)}><X size={15} /></button></div><div className="ai-side-tabs"><button className={sideTab === 'processing' ? 'active' : ''} onClick={() => setSideTab('processing')}><span>需处理</span><b>{processing.length}</b></button><button className={sideTab === 'stable' ? 'active' : ''} onClick={() => setSideTab('stable')}><span>稳定推进中</span><b>{stable.length}</b></button><button className={sideTab === 'suggestions' ? 'active' : ''} onClick={() => setSideTab('suggestions')}><span>今日处理建议</span><b>{suggestions.length}</b></button></div><div className="ai-side-list">{renderSideList()}</div></aside>}
+          {sideOpen && <aside className="ai-detail-side"><div className="ai-side-head"><strong>商机跟进</strong><button onClick={() => setSideOpen(false)} aria-label="关闭侧边栏"><X size={15} /></button></div><div className="ai-side-tabs"><button className={sideTab === 'processing' ? 'active' : ''} onClick={() => setSideTab('processing')}><span>需审批/处理</span><b>{processing.length}</b></button><button className={sideTab === 'stable' ? 'active' : ''} onClick={() => setSideTab('stable')}><span>顺利推进中</span><b>{stable.length}</b></button><button className={sideTab === 'suggestions' ? 'active' : ''} onClick={() => setSideTab('suggestions')}><span>今日处理建议</span><b>{suggestions.length}</b></button></div><div className={`ai-side-section-title ${sideTab}`}><i /><strong>{sideTab === 'processing' ? '需审批/处理' : sideTab === 'stable' ? '顺利推进中' : '今日处理建议'} · {sideTab === 'processing' ? processing.length : sideTab === 'stable' ? stable.length : suggestions.length}</strong></div><div className="ai-side-list">{renderSideList()}</div></aside>}
         </div>
       </section>
 
