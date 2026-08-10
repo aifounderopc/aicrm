@@ -6,11 +6,11 @@ import { useState, useEffect } from 'react'
 import { useMobile } from '../../hooks/useMobile'
 
 const navItems = [
-  { to: '/', label: '首页看板', end: true,  icon: '🏠' },
+  { to: '/', label: 'AI 销售伙伴', end: true, icon: '✨' },
+  { to: '/dashboard', label: '首页看板', end: false,  icon: '🏠' },
   { to: '/query',  label: '商机查询', end: false, icon: '🔍' },
   { to: '/report', label: '报备商机', end: false, icon: '📋' },
   { to: '/my',     label: '我的商机', end: false, icon: '💼' },
-  { to: '/sales-partner', label: 'AI 销售伙伴', end: false, icon: '✨' },
   { to: '/connectors', label: '连接器', end: false, icon: '🔗' },
   { to: '/admin',  label: '管理后台', end: false, icon: '⚙️', adminOnly: true },
 ]

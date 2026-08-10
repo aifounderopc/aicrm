@@ -43,7 +43,8 @@ export default function App() {
     <BrowserRouter>
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<SalesPartner />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/query" element={<Query />} />
           <Route path="/report" element={<Report />} />
           <Route path="/my" element={<MyOpportunities />} />

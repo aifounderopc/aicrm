@@ -321,6 +321,26 @@ export const seedData: AppState = {
       isFrozen: false, progressReports: [], renewalRequests: [],
     },
 
+    // 京东大药房 — 大健康 — 签约中
+    {
+      id: 'opp25',
+      customerName: '京东大药房',
+      companyName: '京东大药房（青岛）连锁有限公司',
+      industry: '大健康 / 医疗',
+      source: 'direct',
+      saOwnerId: 'u_yd', saOwnerName: '严頤',
+      salesOwnerId: 'u_yd', salesOwnerName: '严頤',
+      stage: 'signing',
+      reportedAt: d(-18), updatedAt: d(-1), releaseAt: d(12),
+      lockedPermanently: false,
+      contact: { level: '决策层', department: '用户运营', contactTypes: ['phone', 'wechat'], encryptedName: '健康业务负责人' },
+      firstContactDate: d(-21),
+      requirementDescription: '京东大药房会员增长与健康服务体验优化项目，已完成方案沟通并进入商务谈判',
+      amountRange: '20to50',
+      evidenceFiles: [{ id: 'ef25', name: '方案确认邮件.jpg', url: '#', uploadedAt: d(-3), uploadedBy: 'u_yd' }],
+      isFrozen: false, progressReports: [], renewalRequests: [],
+    },
+
     // 14. 艾芙尼 — 快消 — 渠道(驿氪科技) — 初接触
     {
       id: 'opp14',
