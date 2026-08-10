@@ -10,6 +10,8 @@ const navItems = [
   { to: '/query',  label: '商机查询', end: false, icon: '🔍' },
   { to: '/report', label: '报备商机', end: false, icon: '📋' },
   { to: '/my',     label: '我的商机', end: false, icon: '💼' },
+  { to: '/sales-partner', label: 'AI 销售伙伴', end: false, icon: '✨' },
+  { to: '/connectors', label: '连接器', end: false, icon: '🔗' },
   { to: '/admin',  label: '管理后台', end: false, icon: '⚙️', adminOnly: true },
 ]
 
@@ -61,12 +63,12 @@ export default function TopNav() {
   useEffect(() => { if (!isMobile) setDrawerOpen(false) }, [isMobile])
 
   const activeStyle = {
-    padding: '7px 16px', borderRadius: 20, fontSize: 13, fontWeight: 500,
+    padding: '7px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500,
     textDecoration: 'none', color: 'white',
     background: '#111111',
   } as const
   const inactiveStyle = {
-    padding: '7px 16px', borderRadius: 20, fontSize: 13, fontWeight: 500,
+    padding: '7px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500,
     textDecoration: 'none', color: '#6b7280', background: 'transparent',
   } as const
 
