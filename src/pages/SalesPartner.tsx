@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, X } from 'lucide-react'
+import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, Unlock, X } from 'lucide-react'
 import { useStore } from '../store'
 import { amountLabel, daysUntil } from '../utils'
 import type { Opportunity } from '../types'
@@ -79,8 +79,8 @@ export default function SalesPartner() {
       title: opp.customerName,
       tag: expiring ? '保护到期' : opp.stage === 'signing' ? '签约推进' : '需求更新',
       summary: expiring
-        ? `商机保护期仅剩 ${Math.max(daysUntil(opp.releaseAt), 0)} 天，建议尽快补充进展或申请续期。`
-        : `${stageText(opp.stage)} 阶段出现新进展：${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
+        ? `「${stageText(opp.stage)}」更新内容：商机保护期仅剩 ${Math.max(daysUntil(opp.releaseAt), 0)} 天，建议尽快补充进展或申请续期。`
+        : `「${stageText(opp.stage)}」更新内容：${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
     }
   })
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
@@ -92,6 +92,7 @@ export default function SalesPartner() {
   ].filter(Boolean) as { id: string; dimension: string; title: string; opp: Opportunity; reason: string; action: string }[]
   const processing = active.filter(o => (!o.lockedPermanently && daysUntil(o.releaseAt) <= 7) || scoreFor(o) < 60).slice(0, 10)
   const stable = ranked.filter(o => scoreFor(o) >= 75).slice(0, 10)
+  const releasingSoon = active.filter(o => !o.lockedPermanently && daysUntil(o.releaseAt) >= 0 && daysUntil(o.releaseAt) <= 7)
   const yesterday = new Date(Date.now() - 86400_000)
   const yesterdayLabel = yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
   const stageData = (['reporting', 'signing', 'signed', 'delivery'] as Opportunity['stage'][]).map(stage => ({
@@ -288,7 +289,7 @@ export default function SalesPartner() {
           <div className="ai-chat-column">
             <div className="ai-chat-scroll">
               <div className="ai-greeting"><div className="ai-bot-avatar"><img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
-              <div className="ai-summary-card"><div className="ai-summary-intro"><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批项</small><strong>{processing.length}</strong></div><em>待处理</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button></div></div>
+              <div className="ai-summary-card"><div className="ai-summary-intro"><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批项</small><strong>{processing.length}</strong></div><em>待审批</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{releasingSoon.length}</strong></div><em>7 天内</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); if (item.id === 'priority') ask('帮我写跟进话术'); else navigate(`/opportunity/${item.opp.id}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已处理</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
               {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span><p>{message.text}</p></div>)}
