@@ -68,6 +68,7 @@ export default function SalesPartner() {
   const ranked = [...active].sort((a, b) => scoreFor(b) - scoreFor(a))
   const urgent = [...active].sort((a, b) => daysUntil(a.releaseAt) - daysUntil(b.releaseAt))
   const channels: Exclude<SignalChannel, 'all'>[] = ['jingme', 'feishu', 'email', 'meeting']
+  const signalTypes = ['需求更新', '需求确认', '报价谈判', '签约推进']
   const signals = active.slice(0, 10).map((opp, index) => {
     const channel = channels[index % channels.length]
     const expiring = !opp.lockedPermanently && daysUntil(opp.releaseAt) <= 7
@@ -77,10 +78,10 @@ export default function SalesPartner() {
       channel,
       time: index < 3 ? `今天 ${String(10 + index).padStart(2, '0')}:${index ? '20' : '05'}` : `${index - 2} 天前`,
       title: opp.customerName,
-      tag: expiring ? '保护到期' : opp.stage === 'signing' ? '签约推进' : '需求更新',
+      tag: signalTypes[index % signalTypes.length],
       summary: expiring
-        ? `「${stageText(opp.stage)}」更新内容：商机保护期仅剩 ${Math.max(daysUntil(opp.releaseAt), 0)} 天，建议尽快补充进展或申请续期。`
-        : `「${stageText(opp.stage)}」更新内容：${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
+        ? `「${stageText(opp.stage)}」商机保护期仅剩 ${Math.max(daysUntil(opp.releaseAt), 0)} 天，建议尽快补充进展或申请续期。`
+        : `「${stageText(opp.stage)}」${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
     }
   })
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
@@ -254,9 +255,18 @@ export default function SalesPartner() {
     ))
     if (sideTab === 'processing') return processing.map(opp => {
       const result = approvalResults[opp.id]
+      const remainingDays = daysUntil(opp.releaseAt)
+      const approvalTitle = !opp.lockedPermanently && remainingDays <= 7 ? '保护期续期审批' : '商机推进风险确认'
+      const approvalDetail = !opp.lockedPermanently && remainingDays <= 7
+        ? `保护期剩余 ${Math.max(remainingDays, 0)} 天，请确认是否继续锁定并推进。`
+        : `当前健康度 ${scoreFor(opp)} 分，请确认负责人及下一步推进计划。`
       return (
         <article key={opp.id} className={`ai-side-item processing ${result || ''}`}>
-          <button className="ai-side-card-link" onClick={() => navigate(`/opportunity/${opp.id}`)}><strong>{opp.customerName}</strong><p>{stageText(opp.stage)}待确认 · 建议补齐关键字段并尽快完成审批处理。</p></button>
+          <button className="ai-side-card-link" onClick={() => navigate(`/opportunity/${opp.id}`)}>
+            <span className="ai-approval-card-head"><strong>{opp.customerName}</strong><em>{stageText(opp.stage)}</em></span>
+            <span className="ai-approval-subject"><small>需审批项</small><b>{approvalTitle}</b></span>
+            <p>{approvalDetail}</p>
+          </button>
           <div className="ai-approval-actions">
             {result ? <span className={result}>{result === 'confirmed' ? '已确认' : '已驳回'}</span> : <><button className="confirm" onClick={() => setApprovalResults(items => ({ ...items, [opp.id]: 'confirmed' }))}>确认</button><button className="reject" onClick={() => setApprovalResults(items => ({ ...items, [opp.id]: 'rejected' }))}>驳回</button></>}
           </div>
