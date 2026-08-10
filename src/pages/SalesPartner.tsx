@@ -47,6 +47,7 @@ export default function SalesPartner() {
   const [dailyOpen, setDailyOpen] = useState(false)
   const [sideOpen, setSideOpen] = useState(false)
   const [sideTab, setSideTab] = useState<SideTab>('processing')
+  const [approvalResults, setApprovalResults] = useState<Record<string, 'confirmed' | 'rejected'>>({})
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合 CRM 商机、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
@@ -132,10 +133,20 @@ export default function SalesPartner() {
         <strong>{item.opp.customerName}</strong><p>{item.reason} · {item.action}</p>
       </button>
     ))
-    const list = sideTab === 'processing' ? processing : stable
-    return list.map(opp => (
-      <button key={opp.id} className={`ai-side-item ${sideTab}`} onClick={() => navigate(`/opportunity/${opp.id}`)}>
-        <strong>{opp.customerName}</strong><p>{sideTab === 'processing' ? `${stageText(opp.stage)}待确认 · 建议补齐关键字段并尽快完成审批处理。` : `${stageText(opp.stage)} · 健康度 ${scoreFor(opp)} 分，按当前节奏持续推进。`}</p>
+    if (sideTab === 'processing') return processing.map(opp => {
+      const result = approvalResults[opp.id]
+      return (
+        <article key={opp.id} className={`ai-side-item processing ${result || ''}`}>
+          <button className="ai-side-card-link" onClick={() => navigate(`/opportunity/${opp.id}`)}><strong>{opp.customerName}</strong><p>{stageText(opp.stage)}待确认 · 建议补齐关键字段并尽快完成审批处理。</p></button>
+          <div className="ai-approval-actions">
+            {result ? <span className={result}>{result === 'confirmed' ? '已确认' : '已驳回'}</span> : <><button className="confirm" onClick={() => setApprovalResults(items => ({ ...items, [opp.id]: 'confirmed' }))}>确认</button><button className="reject" onClick={() => setApprovalResults(items => ({ ...items, [opp.id]: 'rejected' }))}>驳回</button></>}
+          </div>
+        </article>
+      )
+    })
+    return stable.map(opp => (
+      <button key={opp.id} className="ai-side-item stable" onClick={() => navigate(`/opportunity/${opp.id}`)}>
+        <strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · 健康度 {scoreFor(opp)} 分，按当前节奏持续推进。</p>
       </button>
     ))
   }
@@ -143,7 +154,7 @@ export default function SalesPartner() {
   return (
     <div className={`ai-partner-page ${sideOpen ? 'with-side' : ''}`}>
       <aside className="ai-signal-panel glass-panel">
-        <div className="ai-panel-title"><div><span className="ai-kicker"><Sparkles size={13} /> LIVE CONTEXT</span><h2>商机实时信号</h2></div><b>{visibleSignals.length} 条</b></div>
+        <div className="ai-panel-title"><span className="ai-kicker"><Sparkles size={14} /> 商机实时信号</span><b>{visibleSignals.length} 条</b></div>
         <div className="ai-filter-row">{(['all', 'jingme', 'feishu', 'email', 'meeting'] as SignalChannel[]).map(id => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{id === 'all' ? '全部' : channelMeta[id].label}</button>)}</div>
         <div className="ai-signal-list">
           {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; return <button key={item.id} className="ai-signal-item" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span>{item.tag}</span></div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">该渠道暂无新信号</div>}
@@ -153,7 +164,7 @@ export default function SalesPartner() {
       <section className="ai-conversation glass-panel">
         <header className="ai-conversation-head">
           <button className="ai-head-action" onClick={() => setDailyOpen(true)}><CalendarDays size={15} /><strong>商机日报</strong></button>
-          <button className={`ai-side-toggle ${sideOpen ? 'active' : ''}`} onClick={() => setSideOpen(v => !v)} aria-label="展开销售伙伴侧边栏" title="侧边栏"><PanelRight size={17} /></button>
+          {!sideOpen && <button className="ai-side-toggle" onClick={() => setSideOpen(true)} aria-label="展开销售伙伴侧边栏" title="侧边栏"><PanelRight size={17} /></button>}
         </header>
         <div className="ai-conversation-main">
           <div className="ai-chat-column">
