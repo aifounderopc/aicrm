@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BarChart3, Bot, CalendarDays, Check, ChevronRight, Clock3, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, Users, X } from 'lucide-react'
+import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, X } from 'lucide-react'
 import { useStore } from '../store'
 import { amountLabel, daysUntil } from '../utils'
 import type { Opportunity } from '../types'
@@ -48,6 +48,7 @@ export default function SalesPartner() {
   const [sideOpen, setSideOpen] = useState(false)
   const [sideTab, setSideTab] = useState<SideTab>('processing')
   const [approvalResults, setApprovalResults] = useState<Record<string, 'confirmed' | 'rejected'>>({})
+  const [reportAction, setReportAction] = useState<'copied' | 'exported' | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合 CRM 商机、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
@@ -105,6 +106,123 @@ export default function SalesPartner() {
   const openSide = (tab: SideTab) => {
     setSideTab(tab)
     setSideOpen(true)
+  }
+
+  const dailyReportText = () => [
+    '今日商机日报',
+    `统计周期：昨日（${yesterdayLabel}）`,
+    `活跃商机：${active.length} 个`,
+    `顺利推进：${stable.length} 个`,
+    `需重点推进：${processing.length} 个`,
+    `已签约/交付：${visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length} 个`,
+    `今日建议：优先跟进「${ranked[0]?.customerName || '暂无'}」`,
+    '',
+    ...ranked.slice(0, 4).map((opp, index) => `${index + 1}. ${opp.customerName}｜${stageText(opp.stage)}｜健康度 ${scoreFor(opp)} 分`),
+  ].join('\n')
+
+  const flashReportAction = (action: 'copied' | 'exported') => {
+    setReportAction(action)
+    window.setTimeout(() => setReportAction(null), 1800)
+  }
+
+  const copyDailyReport = async () => {
+    const text = dailyReportText()
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      textarea.remove()
+    }
+    flashReportAction('copied')
+  }
+
+  const exportDailyReport = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1200
+    canvas.height = 1380
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const card = (x: number, y: number, width: number, height: number, fill = '#ffffff') => {
+      ctx.fillStyle = fill
+      ctx.beginPath()
+      ctx.roundRect(x, y, width, height, 24)
+      ctx.fill()
+    }
+    const text = (value: string, x: number, y: number, size: number, color: string, weight = 400) => {
+      ctx.fillStyle = color
+      ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif`
+      ctx.fillText(value, x, y)
+    }
+    const gradient = ctx.createLinearGradient(0, 0, 1200, 1380)
+    gradient.addColorStop(0, '#eaf8fb')
+    gradient.addColorStop(1, '#f9fcfc')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    text('Scale X', 70, 78, 24, '#0c91a8', 800)
+    text('今日商机日报', 70, 145, 48, '#092f3a', 800)
+    text(`统计周期：昨日 · ${yesterdayLabel}`, 70, 190, 22, '#688890', 500)
+    card(70, 230, 1060, 110, '#def5f7')
+    text(`昨日共跟踪 ${active.length} 个活跃商机，${stable.length} 个顺利推进，${processing.length} 个需重点推进。`, 100, 285, 24, '#244e58', 600)
+    text(`今日建议优先跟进「${ranked[0]?.customerName || '暂无'}」。`, 100, 320, 22, '#0c829b', 700)
+    const metrics = [
+      ['活跃商机', active.length, '当前 Pipeline'],
+      ['顺利推进', stable.length, '健康度 ≥ 75'],
+      ['需重点推进', processing.length, '到期或高风险'],
+      ['已签约/交付', visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length, '持续锁定'],
+    ] as const
+    metrics.forEach(([label, value, note], index) => {
+      const x = 70 + index * 270
+      card(x, 375, 250, 150)
+      text(label, x + 24, 415, 20, '#69868e', 600)
+      text(String(value), x + 24, 472, 42, '#123e49', 800)
+      text(note, x + 24, 505, 17, '#8ca3a8', 500)
+    })
+    card(70, 565, 640, 320)
+    text('商机阶段分布', 100, 610, 25, '#234e59', 750)
+    stageData.forEach((item, index) => {
+      const y = 660 + index * 52
+      text(item.label, 100, y, 19, '#607f87', 600)
+      ctx.fillStyle = '#edf3f4'
+      ctx.fillRect(220, y - 17, 390, 16)
+      ctx.fillStyle = ['#36a8bd', '#f0aa3c', '#28a879', '#7867ce'][index]
+      ctx.fillRect(220, y - 17, Math.max(24, item.value / maxStage * 390), 16)
+      text(String(item.value), 630, y, 19, '#315863', 700)
+    })
+    card(735, 565, 395, 320)
+    text('Top 行业分布', 765, 610, 25, '#234e59', 750)
+    industryData.forEach(([name, value], index) => {
+      const y = 658 + index * 37
+      ctx.fillStyle = ['#12a4b7', '#6e7fd1', '#e8a23c', '#38a77a', '#d16f87', '#8a72c9'][index]
+      ctx.beginPath(); ctx.arc(775, y - 6, 6, 0, Math.PI * 2); ctx.fill()
+      text(name, 795, y, 18, '#526f78', 600)
+      text(`${value} 个`, 1055, y, 18, '#315863', 700)
+    })
+    card(70, 925, 1060, 360)
+    text('昨日重点与今日建议', 100, 975, 26, '#234e59', 750)
+    ranked.slice(0, 4).forEach((opp, index) => {
+      const y = 1035 + index * 60
+      text(`0${index + 1}`, 100, y, 18, '#9db2b7', 800)
+      text(opp.customerName, 155, y, 21, '#234e59', 700)
+      text(`${stageText(opp.stage)} · 健康度 ${scoreFor(opp)} 分`, 750, y, 18, '#0c829b', 650)
+      ctx.strokeStyle = '#e5eef0'; ctx.beginPath(); ctx.moveTo(100, y + 23); ctx.lineTo(1100, y + 23); ctx.stroke()
+    })
+    text('由 Scale X 基于授权 CRM 与连接器数据生成', 70, 1340, 18, '#8ca3a8', 500)
+    canvas.toBlob(blob => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `今日商机日报-${new Date().toISOString().slice(0, 10)}.png`
+      link.click()
+      URL.revokeObjectURL(url)
+      flashReportAction('exported')
+    }, 'image/png')
   }
 
   const ask = (question = input) => {
@@ -169,11 +287,11 @@ export default function SalesPartner() {
         <div className="ai-conversation-main">
           <div className="ai-chat-column">
             <div className="ai-chat-scroll">
-              <div className="ai-greeting"><div className="ai-bot-avatar"><Sparkles size={21} /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
-              <div className="ai-summary-card"><div className="ai-summary-intro"><Bot size={18} /><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批项</small><strong>{processing.length}</strong></div><em>待处理</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button></div></div>
+              <div className="ai-greeting"><div className="ai-bot-avatar"><img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
+              <div className="ai-summary-card"><div className="ai-summary-intro"><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批项</small><strong>{processing.length}</strong></div><em>待处理</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); if (item.id === 'priority') ask('帮我写跟进话术'); else navigate(`/opportunity/${item.opp.id}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已处理</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
-              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <Bot size={16} /> : <Users size={16} />}</span><p>{message.text}</p></div>)}
+              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span><p>{message.text}</p></div>)}
             </div>
             <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} onClick={() => ask(q)}>{q}</button>)}</div><div className="ai-inputbar"><MessageCircle size={18} /><input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && ask()} placeholder="你有什么商机进展 / 推进问题，都可以问我…" /><button onClick={() => ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note">Scale X 仅基于你有权访问的 CRM 与连接器数据提供商机分析和推进支持</div></div>
           </div>
@@ -181,7 +299,7 @@ export default function SalesPartner() {
         {sideOpen && <aside className="ai-detail-side"><div className="ai-side-head"><strong>商机跟进</strong><button onClick={() => setSideOpen(false)} aria-label="关闭侧边栏"><X size={15} /></button></div><div className="ai-side-tabs"><button className={sideTab === 'processing' ? 'active' : ''} onClick={() => setSideTab('processing')}><span>需审批/处理</span><b>{processing.length}</b></button><button className={sideTab === 'stable' ? 'active' : ''} onClick={() => setSideTab('stable')}><span>顺利推进中</span><b>{stable.length}</b></button><button className={sideTab === 'suggestions' ? 'active' : ''} onClick={() => setSideTab('suggestions')}><span>今日处理建议</span><b>{suggestions.length}</b></button></div><div className="ai-side-list">{renderSideList()}</div></aside>}
       </section>
 
-      {dailyOpen && <div className="ai-modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setDailyOpen(false)}><section className="ai-daily-modal"><header><div><span><BarChart3 size={17} /> 昨日商机日报</span><p>{yesterdayLabel} · 基于已授权 CRM 与连接器数据</p></div><button onClick={() => setDailyOpen(false)}><X size={17} /></button></header><div className="ai-daily-body"><div className="ai-daily-summary"><Sparkles size={18} /><p>昨日共跟踪 <b>{active.length}</b> 个活跃商机，{stable.length} 个稳定推进，{processing.length} 个需优先处理。建议今日优先跟进「{ranked[0]?.customerName || '暂无'}」。</p></div><div className="ai-daily-metrics"><div><span>活跃商机</span><strong>{active.length}</strong><small>当前 Pipeline</small></div><div><span>稳定推进</span><strong>{stable.length}</strong><small>健康度 ≥ 75</small></div><div><span>需处理</span><strong>{processing.length}</strong><small>到期或高风险</small></div><div><span>已签约/交付</span><strong>{visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length}</strong><small>持续锁定</small></div></div><div className="ai-daily-charts"><section><h3>商机阶段分布</h3><div className="ai-bar-chart">{stageData.map((item, index) => <div key={item.label}><span>{item.label}</span><i><b style={{ width: `${Math.max(8, item.value / maxStage * 100)}%`, background: ['#36a8bd', '#f0aa3c', '#28a879', '#7867ce'][index] }} /></i><strong>{item.value}</strong></div>)}</div></section><section><h3>Top 行业分布</h3><div className="ai-industry-list">{industryData.map(([name, value], index) => <div key={name}><i style={{ background: ['#12a4b7', '#6e7fd1', '#e8a23c', '#38a77a', '#d16f87', '#8a72c9'][index] }} /><span>{name}</span><strong>{value} 个</strong></div>)}</div></section></div><div className="ai-daily-focus"><h3>昨日重点与今日建议</h3>{ranked.slice(0, 4).map((opp, index) => <button key={opp.id} onClick={() => { setDailyOpen(false); navigate(`/opportunity/${opp.id}`) }}><b>0{index + 1}</b><div><strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · {opp.requirementDescription.slice(0, 42)}…</p></div><span>健康度 {scoreFor(opp)}</span><ChevronRight size={14} /></button>)}</div></div></section></div>}
+      {dailyOpen && <div className="ai-modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setDailyOpen(false)}><section className="ai-daily-modal"><header><div className="ai-daily-heading"><span><BarChart3 size={20} /> 今日商机日报</span><p>统计周期：昨日 · {yesterdayLabel}</p></div><div className="ai-daily-header-actions"><button onClick={copyDailyReport}><Copy size={15} />{reportAction === 'copied' ? '已复制' : '一键复制'}</button><button onClick={exportDailyReport}><Download size={15} />{reportAction === 'exported' ? '已导出' : '导出图片'}</button><button className="close" onClick={() => setDailyOpen(false)} aria-label="关闭日报"><X size={18} /></button></div></header><div className="ai-daily-body"><div className="ai-daily-summary"><Sparkles size={20} /><p>昨日共跟踪 <b>{active.length}</b> 个活跃商机，{stable.length} 个顺利推进，{processing.length} 个需重点推进。建议今日优先跟进「{ranked[0]?.customerName || '暂无'}」。</p></div><div className="ai-daily-metrics"><div><span>活跃商机</span><strong>{active.length}</strong><small>当前 Pipeline</small></div><div><span>顺利推进</span><strong>{stable.length}</strong><small>健康度 ≥ 75</small></div><div><span>需重点推进</span><strong>{processing.length}</strong><small>到期或高风险</small></div><div><span>已签约/交付</span><strong>{visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length}</strong><small>持续锁定</small></div></div><div className="ai-daily-charts"><section><h3>商机阶段分布</h3><div className="ai-bar-chart">{stageData.map((item, index) => <div key={item.label}><span>{item.label}</span><i><b style={{ width: `${Math.max(8, item.value / maxStage * 100)}%`, background: ['#36a8bd', '#f0aa3c', '#28a879', '#7867ce'][index] }} /></i><strong>{item.value}</strong></div>)}</div></section><section><h3>Top 行业分布</h3><div className="ai-industry-list">{industryData.map(([name, value], index) => <div key={name}><i style={{ background: ['#12a4b7', '#6e7fd1', '#e8a23c', '#38a77a', '#d16f87', '#8a72c9'][index] }} /><span>{name}</span><strong>{value} 个</strong></div>)}</div></section></div><div className="ai-daily-focus"><h3>昨日重点与今日建议</h3>{ranked.slice(0, 4).map((opp, index) => <button key={opp.id} onClick={() => { setDailyOpen(false); navigate(`/opportunity/${opp.id}`) }}><b>0{index + 1}</b><div><strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · {opp.requirementDescription.slice(0, 42)}…</p></div><span>健康度 {scoreFor(opp)}</span><ChevronRight size={16} /></button>)}</div></div></section></div>}
     </div>
   )
 }
