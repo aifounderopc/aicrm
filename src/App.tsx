@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import Dashboard from './pages/Dashboard'
 import Query from './pages/Query'
@@ -48,7 +48,7 @@ export default function App() {
           <Route path="/query" element={<Query />} />
           <Route path="/report" element={<Report />} />
           <Route path="/my" element={<MyOpportunities />} />
-          <Route path="/sales-partner" element={<SalesPartner />} />
+          <Route path="/sales-partner" element={<Navigate to="/" replace />} />
           <Route path="/connectors" element={<Connectors />} />
           <Route path="/opportunity/:id" element={<OpportunityDetail />} />
           <Route path="/admin" element={<Admin />} />

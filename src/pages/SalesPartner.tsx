@@ -31,6 +31,13 @@ function stageText(stage: Opportunity['stage']) {
   return ({ reporting: '初接触', signing: '签约中', signed: '已签约', delivery: '交付中', released: '已释放' } as const)[stage]
 }
 
+function greetingText(hour = new Date().getHours()) {
+  if (hour >= 5 && hour < 11) return '上午好'
+  if (hour >= 11 && hour < 14) return '中午好'
+  if (hour >= 14 && hour < 18) return '下午好'
+  return '晚上好'
+}
+
 export default function SalesPartner() {
   const { currentUser, opportunities } = useStore()
   const navigate = useNavigate()
@@ -116,13 +123,13 @@ export default function SalesPartner() {
 
   const renderSideList = () => {
     if (sideTab === 'suggestions') return suggestions.map(item => (
-      <button key={item.id} className="ai-side-item" onClick={() => navigate(`/opportunity/${item.opp.id}`)}>
+      <button key={item.id} className="ai-side-item suggestions" onClick={() => navigate(`/opportunity/${item.opp.id}`)}>
         <span className="suggestion"><Sparkles size={13} /></span><div><strong>{item.title}</strong><p>{item.opp.customerName} · {item.action}</p></div><ChevronRight size={14} />
       </button>
     ))
     const list = sideTab === 'processing' ? processing : stable
     return list.map(opp => (
-      <button key={opp.id} className="ai-side-item" onClick={() => navigate(`/opportunity/${opp.id}`)}>
+      <button key={opp.id} className={`ai-side-item ${sideTab}`} onClick={() => navigate(`/opportunity/${opp.id}`)}>
         <span className={sideTab}><>{sideTab === 'processing' ? <TriangleAlert size={13} /> : <TrendingUp size={13} />}</></span>
         <div><strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · 健康度 {scoreFor(opp)} 分</p></div><ChevronRight size={14} />
       </button>
@@ -142,14 +149,13 @@ export default function SalesPartner() {
       <section className="ai-conversation glass-panel">
         <header className="ai-conversation-head">
           <button className="ai-head-action" onClick={() => setDailyOpen(true)}><CalendarDays size={15} /><span><strong>商机日报</strong><small>查看昨日汇总</small></span></button>
-          <div className="ai-head-title"><span><Bot size={17} /> AI 销售伙伴</span><p>正在分析 {active.length} 个活跃商机</p></div>
-          <div className="ai-head-right"><div className="ai-online"><i /> 已同步</div><button className={sideOpen ? 'active' : ''} onClick={() => setSideOpen(v => !v)}><PanelRight size={16} /> 侧边栏</button></div>
+          <button className={`ai-side-toggle ${sideOpen ? 'active' : ''}`} onClick={() => setSideOpen(v => !v)} aria-label="展开销售伙伴侧边栏" title="侧边栏"><PanelRight size={17} /></button>
         </header>
         <div className="ai-conversation-main">
           <div className="ai-chat-column">
             <div className="ai-chat-scroll">
-              <div className="ai-greeting"><div className="ai-bot-avatar"><Sparkles size={21} /></div><div><h1>你好，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
-              <div className="ai-summary-card"><div className="ai-summary-intro"><Bot size={18} /><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{processing.length}</b> 个需处理项。</p></div><div className="ai-snapshot-grid"><div><span><Clock3 size={15} /> 推进中</span><strong>{active.filter(o => ['reporting', 'signing'].includes(o.stage)).length}</strong><small>需持续跟进</small></div><div><span><TriangleAlert size={15} /> 需处理</span><strong>{processing.length}</strong><small>已生成建议</small></div><div><span><Check size={15} /> 稳定推进</span><strong>{stable.length}</strong><small>健康度 ≥ 75</small></div></div></div>
+              <div className="ai-greeting"><div className="ai-bot-avatar"><Sparkles size={21} /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
+              <div className="ai-summary-card"><div className="ai-summary-intro"><Bot size={18} /><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{processing.length}</b> 个需处理项。</p></div><div className="ai-snapshot-grid"><div className="progress"><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>推进中</small><strong>{active.filter(o => ['reporting', 'signing'].includes(o.stage)).length}</strong></div><em>持续跟进</em></div><div className="urgent"><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需处理</small><strong>{processing.length}</strong></div><em>优先处理</em></div><div className="stable"><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>稳定推荐</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); if (item.id === 'priority') ask('帮我写跟进话术'); else navigate(`/opportunity/${item.opp.id}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已处理</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
               {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <Bot size={16} /> : <Users size={16} />}</span><p>{message.text}</p></div>)}
