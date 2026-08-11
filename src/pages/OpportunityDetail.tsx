@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText, Phone, Mail, MessageCircle, Plus, Trash2, Eye } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText, Phone, Mail, MessageCircle, Plus, Trash2, Eye, CircleHelp } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, ApiError } from '../api'
@@ -241,9 +241,13 @@ export default function OpportunityDetail() {
   const productInterest = `${opp.industry.replace(/\s*\/\s*/g, ' · ')}解决方案`
   const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
   const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError || contact.encryptedName ? '••••' : '待补充')
+  const salesTimelineItems = progressReports.length
+    ? progressReports.slice().reverse().map(item => ({ id: item.id, time: formatDate(item.createdAt), title: `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`, body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售更新' }))
+    : [{ id: 'stage-update', time: formatDate(opp.updatedAt), title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }]
   const timelineItems = [
-    ...progressReports.slice().reverse().map(item => ({ id: item.id, time: formatDate(item.createdAt), title: statusMeta[item.status]?.label || '推进更新', body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售操作' })),
-    { id: 'created', time: formatDate(opp.reportedAt), title: '商机创建', body: `${opp.source === 'channel' ? '渠道报备' : '销售报备'}完成，进入商机保护并开始持续跟进。`, type: 'context', label: '商机上下文' },
+    ...salesTimelineItems,
+    { id: 'ai-summary', time: formatDate(opp.updatedAt), title: 'AI 销售伙伴总结', body: `${opp.customerName}当前处于「${stageName(opp.stage)}」，商机健康度 ${healthScore} 分。${riskText}`, type: 'ai', label: 'AI 总结' },
+    { id: 'context', time: formatDate(opp.reportedAt), title: `${opp.source === 'channel' ? opp.channelName || '渠道报备' : '销售报备'} · 商机上下文`, body: opp.requirementDescription || `${opp.customerName}的商机信息已进入上下文，等待补充具体需求。`, type: 'context', label: '商机上下文' },
   ]
 
   return (
@@ -321,7 +325,7 @@ export default function OpportunityDetail() {
           <div className={`sx-health-ring ${healthTone}`} style={{ '--score': `${healthScore * 3.6}deg` } as React.CSSProperties}>
             <strong>{healthScore}</strong>
           </div>
-          <span>商家健康度</span>
+          <span>商机健康度 <button className="sx-health-help" aria-label="查看商机健康度评估规则" data-tooltip="综合评估商机阶段、销售推进活跃度、上下文与举证完整度、保护期状态；分数越高，表示商机推进越健康。"><CircleHelp size={13} /></button></span>
         </div>
         <div className="sx-stage-bar" style={{ gridTemplateColumns: `repeat(${displayPipeline.length}, minmax(0, 1fr))` }}>
           {displayPipeline.map((item, index) => {
@@ -338,7 +342,7 @@ export default function OpportunityDetail() {
             <header className="sx-panel-head"><div><span>核心信息</span><h2>商机字段</h2></div><small>AI 抽取 + 人工确认</small></header>
             <div className="sx-field-grid">
               <div className="sx-field"><label>商机名称</label><strong>{opp.customerName}</strong><small>{opp.companyName || '公司全称待补充'}</small></div>
-              <div className="sx-field"><label>产品兴趣</label><strong>{productInterest}</strong></div>
+              <div className="sx-field"><label>需求类型</label><strong>{productInterest}</strong></div>
               <div className="sx-field wide"><label>需求场景</label><strong>{opp.requirementDescription || '待补充'}</strong></div>
               <div className={`sx-field ${!opp.amountRange ? 'warn' : ''}`}><label>预算</label><strong>{amountLabel(opp.amountRange)}</strong></div>
               <div className="sx-field"><label>需求部门</label><strong>{contact.department || '待补充'}</strong></div>
