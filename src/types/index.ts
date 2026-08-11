@@ -105,6 +105,7 @@ export interface Opportunity {
   customerName: string
   companyName?: string
   industry: IndustryType
+  productInterests?: ('JM 声访' | 'JM 外呼')[]
   source: CustomerSource
   channelId?: string
   channelName?: string

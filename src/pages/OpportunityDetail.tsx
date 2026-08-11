@@ -275,7 +275,7 @@ export default function OpportunityDetail() {
   const intentLevel = opp.amountRange === 'above50' || opp.amountRange === '20to50' ? '高意向' : opp.amountRange === '10to20' ? '中意向' : '培育中'
   const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : ['contacting', 'proposal'].includes(opp.stage) ? '完善需求方案并推动客户确认' : ['negotiation', 'signing'].includes(opp.stage) ? '推进报价谈判与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进交付验收与客户反馈' : '确认是否重新激活商机'
   const productInterestOptions = ['JM 声访', 'JM 外呼']
-  const productInterests = [productInterestOptions[0]]
+  const productInterests = opp.productInterests?.filter(item => productInterestOptions.includes(item)) || [productInterestOptions[0]]
   const productInterest = productInterests.join('、')
   const demandDescription = opp.requirementDescription?.trim() || ''
   const demandDescriptionChars = Array.from(demandDescription)

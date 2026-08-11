@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useStore } from '../store'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, Upload, ChevronRight, ChevronLeft, ChevronDown, Lock, X, ImageIcon } from 'lucide-react'
+import { AlertTriangle, Upload, ChevronRight, ChevronLeft, ChevronDown, Lock, X, ImageIcon, Bot, CheckCircle2, FileText, MessageSquare, RefreshCw, Save, Send, ShieldCheck, Sparkles } from 'lucide-react'
 import { formatDate, daysUntil } from '../utils'
 import type { IndustryType, AmountRange, ContactLevel, Opportunity } from '../types'
 import { useMobile } from '../hooks/useMobile'
@@ -27,7 +27,27 @@ const contactTypeOptions = [
   { value: 'email' as const,  label: '企业邮箱' },
 ]
 
-const steps = ['客户基础信息', '需求方信息', '商机举证']
+const steps = ['商家字段', '联系人信息', '需求与举证']
+
+type ReportMode = 'ai' | 'manual'
+type AiStatus = 'idle' | 'analyzing' | 'ready'
+type AiDraft = {
+  customerName: string
+  companyName: string
+  industry: IndustryType
+  productInterest: 'JM 声访' | 'JM 外呼'
+  source: 'direct' | 'channel'
+  amountRange: AmountRange
+  requirementDescription: string
+  contactDepartment: string
+  contactLevel: ContactLevel
+  contactName: string
+  contactTypes: ('phone' | 'email' | 'wechat')[]
+  firstContactDate: string
+  confidence: number
+}
+
+const sampleContext = '杭州某消费品客户想做新品试吃回访，对 JM 声访感兴趣，希望 7 月中旬前看方案，预算大概 20 万。飞书群里王总让我们尽快约 Demo，需求由市场部牵头。'
 
 const inputStyle = {
   width: '100%', padding: '11px 14px', fontSize: 14,
@@ -49,6 +69,14 @@ export default function Report() {
   const { currentUser, addOpportunity, channels, detectCollision } = useStore()
   const navigate = useNavigate()
   const [params] = useSearchParams()
+  const [mode, setMode] = useState<ReportMode>('ai')
+  const [aiText, setAiText] = useState(sampleContext)
+  const [aiStatus, setAiStatus] = useState<AiStatus>('idle')
+  const [aiDraft, setAiDraft] = useState<AiDraft | null>(null)
+  const [aiCollision, setAiCollision] = useState<Opportunity | null>(null)
+  const [aiSimilar, setAiSimilar] = useState<Opportunity[]>([])
+  const [aiCrossIndustry, setAiCrossIndustry] = useState<Opportunity[]>([])
+  const [aiSaved, setAiSaved] = useState(false)
   const [step, setStep] = useState(0)
   const [collision, setCollision] = useState<Opportunity | null>(null)
   const [similar, setSimilar] = useState<Opportunity[]>([])
@@ -87,6 +115,7 @@ export default function Report() {
     customerName: params.get('name') || '',
     companyName: '',
     industry: '' as IndustryType | '',
+    productInterest: 'JM 声访' as 'JM 声访' | 'JM 外呼',
     source: (isChannel ? 'channel' : 'direct') as 'direct' | 'channel',
     channelId: myChannel?.id || '',
     channelName: myChannel?.name || '',
@@ -103,6 +132,106 @@ export default function Report() {
   })
 
   const upd = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }))
+
+  const inferIndustry = (text: string): IndustryType => {
+    if (/美妆|护肤|会员/.test(text)) return '美妆 / 护肤'
+    if (/汽车|车主|试驾/.test(text)) return '汽车 / 出行'
+    if (/家电|硬件|3C|数码/.test(text)) return /家电/.test(text) ? '家电 / 智能硬件' : '3C / 数码'
+    if (/酒|白酒|啤酒/.test(text)) return '酒水'
+    if (/母婴|儿童/.test(text)) return '母婴 / 儿童'
+    if (/食品|饮料|试吃|消费品/.test(text)) return '食品 / 饮料'
+    return '其他'
+  }
+
+  const inferAmount = (text: string): AmountRange => {
+    const matched = text.match(/(\d+(?:\.\d+)?)\s*万/)
+    const amount = Number(matched?.[1] || 0)
+    if (amount >= 50) return 'above50'
+    if (amount >= 20) return '20to50'
+    if (amount >= 10) return '10to20'
+    if (amount >= 5) return '5to10'
+    return 'under5'
+  }
+
+  const inferCustomerName = (text: string) => {
+    const explicit = text.match(/(?:客户|品牌|公司)[：:\s]*([^，。；;\n]{2,22})/)
+    if (explicit?.[1] && !/想|希望|需要|对/.test(explicit[1])) return explicit[1].trim()
+    const leading = text.match(/^([^，。；;\n]{2,20}?(?:客户|品牌|集团|公司))/)
+    return leading?.[1]?.trim() || text.split(/[，。；;\n]/)[0].slice(0, 16).trim()
+  }
+
+  const runAiDetection = () => {
+    if (aiText.trim().length < 10) return
+    setAiStatus('analyzing'); setAiDraft(null); setAiSaved(false)
+    window.setTimeout(() => {
+      const productInterest = /外呼|电销|线索触达/.test(aiText) ? 'JM 外呼' : 'JM 声访'
+      const customerName = inferCustomerName(aiText)
+      const industry = inferIndustry(aiText)
+      const contactName = aiText.match(/([王李张刘陈赵周吴郑孙][总经理老师])/i)?.[1] || ''
+      const contactTypes: ('phone' | 'email' | 'wechat')[] = /邮件|邮箱/.test(aiText) ? ['email'] : /电话|手机/.test(aiText) ? ['phone'] : ['wechat']
+      const requirement = Array.from(aiText.trim()).slice(0, 120).join('')
+      const draft: AiDraft = {
+        customerName,
+        companyName: '',
+        industry,
+        productInterest,
+        source: isChannel ? 'channel' : 'direct',
+        amountRange: inferAmount(aiText),
+        requirementDescription: requirement,
+        contactDepartment: aiText.match(/([^，。]{2,10}部)(?:牵头|负责|提出)?/)?.[1] || '市场部',
+        contactLevel: /总|负责人|决策/.test(aiText) ? '决策层' : '执行层',
+        contactName,
+        contactTypes,
+        firstContactDate: new Date().toISOString().slice(0, 10),
+        confidence: contactName && /\d+\s*万/.test(aiText) ? 92 : 78,
+      }
+      const result = detectCollision(customerName, industry)
+      setAiDraft(draft)
+      setAiCollision(result.collision || null)
+      setAiSimilar(result.similar)
+      setAiCrossIndustry(result.crossIndustry)
+      setAiStatus('ready')
+    }, 650)
+  }
+
+  const updateAiDraft = <K extends keyof AiDraft>(key: K, value: AiDraft[K]) => setAiDraft(draft => draft ? ({ ...draft, [key]: value }) : draft)
+  const aiHasConflict = !!aiCollision || aiSimilar.length > 0 || aiCrossIndustry.length > 0
+  const aiMissing = aiDraft ? [
+    !aiDraft.customerName && '客户名称', !aiDraft.industry && '所属行业', aiDraft.requirementDescription.length < 30 && '需求场景（至少 30 字）',
+    !aiDraft.contactDepartment && '需求部门', !aiDraft.contactName && '联系人', !aiDraft.contactTypes.length && '联系方式',
+  ].filter(Boolean) as string[] : []
+
+  const createFromAiDraft = () => {
+    if (!aiDraft || aiHasConflict || aiMissing.length) return
+    setForm(formValue => ({ ...formValue,
+      customerName: aiDraft.customerName, companyName: aiDraft.companyName, industry: aiDraft.industry,
+      productInterest: aiDraft.productInterest, source: aiDraft.source, amountRange: aiDraft.amountRange,
+      firstContactDate: aiDraft.firstContactDate, requirementDescription: aiDraft.requirementDescription,
+      contactDepartment: aiDraft.contactDepartment, contactLevel: aiDraft.contactLevel,
+      contactTypes: aiDraft.contactTypes, encryptedName: aiDraft.contactName,
+    }))
+    const result = addOpportunity({
+      customerName: aiDraft.customerName,
+      companyName: aiDraft.companyName || undefined,
+      industry: aiDraft.industry,
+      productInterests: [aiDraft.productInterest],
+      source: aiDraft.source,
+      channelId: aiDraft.source === 'channel' ? myChannel?.id : undefined,
+      channelName: aiDraft.source === 'channel' ? myChannel?.name : undefined,
+      channelManagerName: aiDraft.source === 'channel' ? currentUser.name : undefined,
+      saOwnerId: currentUser.id, saOwnerName: currentUser.name,
+      salesOwnerId: currentUser.id, salesOwnerName: currentUser.name,
+      stage: 'reporting',
+      contact: { level: aiDraft.contactLevel, department: aiDraft.contactDepartment, contactTypes: aiDraft.contactTypes, encryptedName: aiDraft.contactName },
+      firstContactDate: aiDraft.firstContactDate,
+      requirementDescription: aiDraft.requirementDescription,
+      amountRange: aiDraft.amountRange,
+      evidenceFiles: [],
+      isSubsidiary: false,
+    })
+    if (result.success) setSuccess(true)
+    else if (result.collision) setAiCollision(result.collision)
+  }
 
   const toggleContactType = (t: 'phone' | 'email' | 'wechat') =>
     upd('contactTypes', form.contactTypes.includes(t)
@@ -139,6 +268,7 @@ export default function Report() {
       customerName: form.customerName,
       companyName: form.companyName || undefined,
       industry: form.industry as IndustryType,
+      productInterests: [form.productInterest],
       source: form.source,
       channelId: form.channelId || undefined,
       channelName: form.channelName || undefined,
@@ -192,12 +322,79 @@ export default function Report() {
     )
   }
 
+  if (mode === 'ai') {
+    const collisionMatches = [
+      ...(aiCollision ? [aiCollision] : []),
+      ...aiSimilar,
+      ...aiCrossIndustry,
+    ]
+    return <main className="ai-report-page">
+      <header className="ai-report-head">
+        <div><span><Sparkles size={14}/> AI RECOMMENDED</span><h1>AI 商机报备</h1><p>粘贴飞书、企微、邮件或拜访记录，AI 自动抽取商机字段并完成撞单预检。</p></div>
+        <div className="report-mode-switch"><button className="active"><Bot size={15}/>AI 报备<em>推荐</em></button><button onClick={() => setMode('manual')}><FileText size={15}/>人工填写</button></div>
+      </header>
+
+      <section className="ai-report-flow" aria-label="AI 报备流程">
+        {[['1','输入上下文'],['2','AI 字段抽取'],['3','撞单预检'],['4','人工确认']].map(([number,label], index) => {
+          const active = aiStatus === 'idle' ? index === 0 : aiStatus === 'analyzing' ? index <= 1 : index <= 3
+          const completed = aiStatus === 'ready' && index < 3
+          return <div className={`${active ? 'active' : ''} ${completed ? 'completed' : ''}`} key={number}><i>{completed ? <CheckCircle2 size={14}/> : number}</i><span>{label}</span>{index < 3 && <b/>}</div>
+        })}
+      </section>
+
+      <section className="ai-report-layout">
+        <div className="ai-report-main">
+          <article className="ai-report-card ai-context-card">
+            <header><div><span>STEP 01 · CONTEXT</span><h2>输入商机上下文</h2><p>推荐直接粘贴包含客户、需求、预算、联系人与时间节点的原始沟通内容。</p></div><button onClick={() => { setAiText(sampleContext); setAiStatus('idle'); setAiDraft(null) }}><RefreshCw size={14}/>使用示例</button></header>
+            <div className="ai-context-input"><MessageSquare size={18}/><textarea value={aiText} onChange={event => { setAiText(event.target.value); setAiStatus('idle'); setAiDraft(null) }} placeholder="粘贴飞书群聊、企微沟通、邮件或拜访纪要…"/><span>{Array.from(aiText).length} 字</span></div>
+            <footer><span className={`ai-detect-status ${aiStatus}`}><i/>{aiStatus === 'idle' ? '等待识别' : aiStatus === 'analyzing' ? '正在理解上下文并预检撞单…' : 'AI 草稿已生成'}</span><button className="ai-primary" onClick={runAiDetection} disabled={aiText.trim().length < 10 || aiStatus === 'analyzing'}>{aiStatus === 'analyzing' ? <><span className="ai-spinner"/>正在识别</> : <><Sparkles size={16}/>识别并检测撞单</>}</button></footer>
+          </article>
+
+          {aiStatus !== 'ready' || !aiDraft ? <article className="ai-report-card ai-waiting-card"><Bot size={28}/><h3>AI 将生成可编辑的商机草稿</h3><p>自动提取客户名称、产品兴趣、需求场景、预算、联系人和需求部门；创建前仍需由你确认。</p></article> : <>
+            <article className="ai-report-card ai-draft-card">
+              <header><div><span>STEP 02 · DRAFT</span><h2>商机草稿</h2><p>AI 置信度 {aiDraft.confidence}%，所有字段均可在创建前修改。</p></div><em>可编辑</em></header>
+              <div className="ai-draft-grid">
+                <label><span>客户名称 *</span><input value={aiDraft.customerName} onChange={event => updateAiDraft('customerName',event.target.value)}/></label>
+                <label><span>公司全称</span><input value={aiDraft.companyName} onChange={event => updateAiDraft('companyName',event.target.value)} placeholder="选填，用于区分子公司"/></label>
+                <label><span>所属行业 *</span><select value={aiDraft.industry} onChange={event => updateAiDraft('industry',event.target.value as IndustryType)}>{industries.map(item => <option key={item}>{item}</option>)}</select></label>
+                <label><span>商机类型</span><input value={aiDraft.source === 'channel' ? '渠道商机' : '直客商机'} readOnly/></label>
+                <label className="wide"><span>产品兴趣 *</span><div className="ai-product-options">{(['JM 声访','JM 外呼'] as const).map(item => <button type="button" key={item} className={aiDraft.productInterest === item ? 'active' : ''} onClick={() => updateAiDraft('productInterest',item)}>{item}</button>)}</div></label>
+                <label><span>需求部门 *</span><input value={aiDraft.contactDepartment} onChange={event => updateAiDraft('contactDepartment',event.target.value)}/></label>
+                <label><span>预算区间 *</span><select value={aiDraft.amountRange} onChange={event => updateAiDraft('amountRange',event.target.value as AmountRange)}>{amounts.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                <label><span>联系人 *</span><input value={aiDraft.contactName} onChange={event => updateAiDraft('contactName',event.target.value)} className={!aiDraft.contactName ? 'warn' : ''} placeholder="需要人工补充"/></label>
+                <label><span>联系人层级</span><select value={aiDraft.contactLevel} onChange={event => updateAiDraft('contactLevel',event.target.value as ContactLevel)}>{(['决策层','执行层','技术评估层'] as ContactLevel[]).map(item => <option key={item}>{item}</option>)}</select></label>
+                <label className="wide"><span>联系方式 *</span><div className="ai-contact-options">{contactTypeOptions.map(item => <button type="button" key={item.value} className={aiDraft.contactTypes.includes(item.value) ? 'active' : ''} onClick={() => updateAiDraft('contactTypes',aiDraft.contactTypes.includes(item.value) ? aiDraft.contactTypes.filter(type => type !== item.value) : [...aiDraft.contactTypes,item.value])}>{item.label}</button>)}</div></label>
+                <label className="wide"><span>需求场景 * <em>{Array.from(aiDraft.requirementDescription).length}/120</em></span><textarea maxLength={120} value={aiDraft.requirementDescription} onChange={event => updateAiDraft('requirementDescription',event.target.value)}/></label>
+              </div>
+            </article>
+
+            <article className={`ai-report-card ai-collision-card ${aiHasConflict ? 'conflict' : 'clear'}`}>
+              <header><div><span>STEP 03 · COLLISION CHECK</span><h2>撞单预检</h2></div><em>{aiHasConflict ? <><AlertTriangle size={13}/>发现潜在冲突</> : <><ShieldCheck size={13}/>未发现冲突</>}</em></header>
+              {aiHasConflict ? <div className="ai-conflict-list">{collisionMatches.slice(0,3).map(item => <div key={item.id}><strong>{item.customerName}</strong><span>{item.industry} · {item.salesOwnerName} · {item.lockedPermanently ? '持续保护' : `保护期剩余 ${Math.max(0,daysUntil(item.releaseAt))} 天`}</span></div>)}</div> : <p>未发现同客户、同主体或高度相似的保护中商机；正式创建时服务端仍会再次检测。</p>}
+            </article>
+
+            <article className="ai-report-card ai-confirm-card">
+              <div><span>STEP 04 · HUMAN REVIEW</span><h2>确认创建并进入保护期</h2><p>AI 不会直接落库。由你确认后，系统才会创建正式商机并锁定客户 30 天。</p>{aiMissing.length > 0 && <div className="ai-missing"><AlertTriangle size={14}/>还需补充：{aiMissing.join('、')}</div>}{aiSaved && <div className="ai-saved"><CheckCircle2 size={14}/>已保存为待确认草稿</div>}</div>
+              <div className="ai-confirm-actions"><button onClick={() => setAiSaved(true)}><Save size={15}/>保存草稿</button><button className="ai-primary" onClick={createFromAiDraft} disabled={aiHasConflict || aiMissing.length > 0}><Send size={15}/>确认创建并保护</button></div>
+            </article>
+          </>}
+        </div>
+
+        <aside className="ai-report-aside">
+          <article><span><Bot size={15}/>AI 报备原则</span><h2>先生成草稿，再由你确认</h2><ul><li><CheckCircle2 size={14}/>AI 自动抽取并允许逐项编辑</li><li><CheckCircle2 size={14}/>创建前完成撞单预检</li><li><CheckCircle2 size={14}/>服务端创建时再次检查冲突</li><li><CheckCircle2 size={14}/>联系人等敏感字段加密存储</li></ul></article>
+          <article className="ai-report-manual"><FileText size={20}/><h3>上下文信息不完整？</h3><p>可切换到人工填写，按字段逐项完成报备。</p><button onClick={() => setMode('manual')}>使用人工填写<ChevronRight size={14}/></button></article>
+        </aside>
+      </section>
+    </main>
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 120px)' }}>
     <div style={{ width: '100%', maxWidth: 780 }}>
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: '#111111', margin: '0 0 6px' }}>报备商机</h1>
-        <p style={{ fontSize: 14, color: '#6b7280', margin: 0 }}>填写客户信息，完成报备后将进入保护期。</p>
+        <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 12px' }}>人工逐项填写商机字段，完成报备后将进入保护期。</p>
+        <button className="manual-back-ai" onClick={() => setMode('ai')}><Sparkles size={14}/>返回 AI 报备（推荐）</button>
       </div>
 
       {/* Steps */}
@@ -339,6 +536,12 @@ export default function Report() {
                   {industries.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
                 <ChevronDown size={15} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: '#7aabb8', pointerEvents: 'none' }} />
+              </div>
+            </div>
+            <div>
+              <label style={labelStyle}>产品兴趣 *</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {(['JM 声访', 'JM 外呼'] as const).map(item => <button type="button" key={item} onClick={() => upd('productInterest', item)} style={{ flex: 1, padding: '11px 12px', borderRadius: 12, cursor: 'pointer', border: `1.5px solid ${form.productInterest === item ? '#0e9dbf' : 'rgba(14,120,160,0.18)'}`, background: form.productInterest === item ? 'rgba(14,157,191,0.1)' : 'rgba(236,248,252,0.7)', color: form.productInterest === item ? '#0a6a82' : '#4b5563', fontWeight: 650 }}>{item}</button>)}
               </div>
             </div>
             <div>
@@ -485,13 +688,13 @@ export default function Report() {
                   fontWeight: 600, fontSize: 12,
                   color: form.requirementDescription.length === 0 ? '#aaa' : form.requirementDescription.length >= 30 ? '#2ec4b6' : '#e05555',
                 }}>
-                  {form.requirementDescription.length} / 30 字
+                  {form.requirementDescription.length} / 120 字
                   {form.requirementDescription.length > 0 && form.requirementDescription.length < 30 && (
                     <span style={{ marginLeft: 6 }}>（还需 {30 - form.requirementDescription.length} 字）</span>
                   )}
                 </span>
               </label>
-              <textarea value={form.requirementDescription} onChange={e => upd('requirementDescription', e.target.value)}
+              <textarea value={form.requirementDescription} maxLength={120} onChange={e => upd('requirementDescription', e.target.value)}
                 rows={4} placeholder="请详细描述客户需求、痛点和当前进展..."
                 style={{
                   ...inputStyle, resize: 'none',
@@ -605,6 +808,7 @@ export default function Report() {
                   ['客户名称', form.customerName],
                   ['公司全称', form.companyName || '—'],
                   ['行业', form.industry],
+                  ['产品兴趣', form.productInterest],
                   ['来源', form.source === 'direct' ? '直客' : `渠道：${form.channelName}`],
                   ['预算区间', amounts.find(a => a.value === form.amountRange)?.label || '—'],
                   ['联系层级', form.contactLevel],

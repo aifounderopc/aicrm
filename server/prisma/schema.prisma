@@ -96,6 +96,7 @@ model Opportunity {
   customerNameNorm       String           @map("customer_name_norm") // 撞单归一化名
   companyName            String?          @map("company_name")
   industry               String
+  productInterests       String[]         @default(["JM 声访"]) @map("product_interests")
   source                 CustomerSource
   channelId              String?          @map("channel_id")
   channel                Channel?         @relation(fields: [channelId], references: [id])

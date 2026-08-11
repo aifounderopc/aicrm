@@ -283,6 +283,7 @@ export const useStore = create<Store>()(
           customerName: opp.customerName,
           companyName: opp.companyName,
           industry: opp.industry,
+          productInterests: opp.productInterests,
           source: opp.source,
           channelId: opp.channelId,
           channelName: opp.channelName,
