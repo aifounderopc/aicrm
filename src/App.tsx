@@ -10,6 +10,7 @@ import LogsPage from './pages/Logs'
 import Login from './pages/Login'
 import SalesPartner from './pages/SalesPartner'
 import Connectors from './pages/Connectors'
+import Performance from './pages/Performance'
 import { useStore } from './store'
 import { useEffect, useState } from 'react'
 import { setUnauthorizedHandler } from './api'
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="/report" element={<Report />} />
           <Route path="/my" element={<MyOpportunities />} />
           <Route path="/sales-partner" element={<Navigate to="/" replace />} />
+          <Route path="/performance" element={<Performance />} />
           <Route path="/connectors" element={<Connectors />} />
           <Route path="/opportunity/:id" element={<OpportunityDetail />} />
           <Route path="/admin" element={<Admin />} />

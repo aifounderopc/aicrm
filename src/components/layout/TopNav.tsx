@@ -11,6 +11,7 @@ const navItems = [
   { to: '/query',  label: '商机查询', end: false, icon: '🔍' },
   { to: '/report', label: '报备商机', end: false, icon: '📋' },
   { to: '/my',     label: '我的商机', end: false, icon: '💼' },
+  { to: '/performance', label: '业绩看板', end: false, icon: '📈' },
   { to: '/connectors', label: '连接器', end: false, icon: '🔗' },
   { to: '/admin',  label: '管理后台', end: false, icon: '⚙️', adminOnly: true },
 ]
