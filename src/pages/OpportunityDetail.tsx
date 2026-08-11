@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText, Phone, Mail, MessageCircle, Plus, Trash2, Eye, CircleHelp } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Plus, Trash2, Eye, CircleHelp } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, ApiError } from '../api'
@@ -384,18 +384,6 @@ export default function OpportunityDetail() {
               <div className={`sx-field wide sx-demand-field ${!demandDescription ? 'warn' : ''}`}><label>需求场景</label><strong>{demandDescriptionDisplay || '待补充，最多支持 120 字'}</strong></div>
             </div>
             {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div><div><span>签约凭证</span>{opp.contractFileId ? <button className="sx-contract-proof" onClick={() => setPreviewEvidence({ url: opp.contractFileId!, name: opp.contractNo ? `${opp.contractNo} 签约凭证` : '签约凭证' })}><ImageIcon size={14} />查看图片</button> : <strong>未上传</strong>}</div></div>}
-          </article>
-
-          <article className="sx-panel">
-            <header className="sx-panel-head"><div><span>证据与来源</span><h2>来源与上下文</h2></div><small>{evidenceFiles.length} 份附件</small></header>
-            <div className="sx-context-grid">
-              <div><Link2 size={16} /><span>来源渠道</span><strong>{opp.source === 'channel' ? opp.channelName || '渠道伙伴' : 'Web 报备工作台'}</strong></div>
-              <div><MessageSquareText size={16} /><span>原文摘要</span><strong>{opp.requirementDescription}</strong></div>
-              <div><Target size={16} /><span>预算与决策</span><strong>{amountLabel(opp.amountRange)} · {contact.level}</strong></div>
-            </div>
-            <div className="sx-evidence-row">
-              {evidenceFiles.length ? evidenceFiles.map(file => <button key={file.id} onClick={() => file.url && setPreviewEvidence({ url: file.url, name: file.name })}><span>{file.url ? <img src={file.url} alt="" /> : <ImageIcon size={18} />}</span><b>{file.name}</b><small>{formatDate(file.uploadedAt)}</small></button>) : <div className="sx-empty-evidence"><ImageIcon size={20} />暂无举证材料</div>}
-            </div>
           </article>
 
           <article className="sx-panel">
