@@ -43,7 +43,7 @@ interface Store extends AppState {
 
   // opportunities
   addOpportunity: (opp: Omit<Opportunity, 'id' | 'reportedAt' | 'updatedAt' | 'releaseAt' | 'progressReports' | 'renewalRequests' | 'isFrozen' | 'lockedPermanently'>) => { success: boolean; collision?: Opportunity; similar?: Opportunity[] }
-  updateStage: (id: string, stage: OpportunityStage, signingInfo?: { contractNo: string; signedDate: string; signedAmount: number; contractFileUrl?: string }) => void
+  updateStage: (id: string, stage: OpportunityStage, signingInfo?: { contractNo: string; signedDate: string; signedAmount: number; contractFileUrl?: string }) => Promise<void>
   releaseOpportunity: (id: string, reason: string) => void
   deleteOpportunity: (id: string) => void
   freezeOpportunity: (id: string, reason: string) => void
@@ -308,9 +308,10 @@ export const useStore = create<Store>()(
         return { success: true, similar }
       },
 
-      updateStage: (id, stage, signingInfo) => {
+      updateStage: async (id, stage, signingInfo) => {
         const now = new Date().toISOString()
         const locked = ['signed', 'delivery'].includes(stage)
+        const previousOpportunity = get().opportunities.find(opportunity => opportunity.id === id)
         set(s => ({
           opportunities: s.opportunities.map(o =>
             o.id === id
@@ -336,10 +337,19 @@ export const useStore = create<Store>()(
           ip: '127.0.0.1',
           device: 'Web',
         })
-        writeThrough(opportunityApi.updateStage(id, stage, signingInfo && {
-          contractNo: signingInfo.contractNo, signedDate: signingInfo.signedDate,
-          signedAmount: signingInfo.signedAmount, contractFileKey: signingInfo.contractFileUrl,
-        }), refetchOpps)
+        if (!USE_API) return
+        try {
+          await opportunityApi.updateStage(id, stage, signingInfo && {
+            contractNo: signingInfo.contractNo, signedDate: signingInfo.signedDate,
+            signedAmount: signingInfo.signedAmount, contractFileKey: signingInfo.contractFileUrl,
+          })
+          await refetchOpps()
+        } catch (error) {
+          if (previousOpportunity) {
+            set(state => ({ opportunities: state.opportunities.map(opportunity => opportunity.id === id ? previousOpportunity : opportunity) }))
+          }
+          throw error
+        }
       },
 
       deleteOpportunity: (id) => {

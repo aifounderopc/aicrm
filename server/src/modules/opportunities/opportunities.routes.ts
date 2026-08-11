@@ -43,6 +43,7 @@ function toClientOpportunity(opp: NonNullable<OpportunityWithRelations>) {
     })),
     progressReports: opp.progressReports,
     renewalRequests: opp.renewalRequests,
+    contractFileId: opp.contractFileKey ?? undefined,
   }
 }
 

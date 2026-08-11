@@ -63,6 +63,8 @@ export default function OpportunityDetail() {
   })
   const [signing, setSigning] = useState({ contractNo: '', signedDate: '', signedAmount: '' })
   const [contractFile, setContractFile] = useState<{ url: string; name: string } | null>(null)
+  const [signingError, setSigningError] = useState('')
+  const [signingSubmitting, setSigningSubmitting] = useState(false)
   const contractFileRef = useRef<HTMLInputElement>(null)
   const [adminAction, setAdminAction] = useState<'release' | 'freeze' | 'rejectEvidence' | 'delete' | null>(null)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
@@ -170,22 +172,47 @@ export default function OpportunityDetail() {
   }
 
 
-  const submitSigning = () => {
-    if (!signing.signedDate || !signing.signedAmount) return
-    updateStage(opp.id, 'signed', {
-      contractNo: '',
-      signedDate: signing.signedDate,
-      signedAmount: Number(signing.signedAmount),
-      contractFileUrl: contractFile?.url,
-    })
-    setShowSigningModal(false)
+  const submitSigning = async () => {
+    const signedAmount = Number(signing.signedAmount)
+    if (!signing.signedDate || !Number.isFinite(signedAmount) || signedAmount <= 0) {
+      setSigningError('请填写有效的签约时间和大于 0 的签约金额')
+      return
+    }
+    setSigningSubmitting(true)
+    setSigningError('')
+    try {
+      await updateStage(opp.id, 'signed', {
+        contractNo: signing.contractNo.trim(),
+        signedDate: signing.signedDate,
+        signedAmount,
+        contractFileUrl: contractFile?.url,
+      })
+      setShowSigningModal(false)
+      setSigning({ contractNo: '', signedDate: '', signedAmount: '' })
+      setContractFile(null)
+    } catch (error) {
+      setSigningError(error instanceof ApiError ? error.message : '签约信息提交失败，请稍后重试')
+    } finally {
+      setSigningSubmitting(false)
+    }
   }
 
   const loadContractFile = (files: FileList | null) => {
     if (!files?.[0]) return
+    const file = files[0]
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setSigningError('仅支持 JPG、PNG 或 WebP 图片')
+      return
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setSigningError('图片大小不能超过 4MB')
+      return
+    }
+    setSigningError('')
     const reader = new FileReader()
-    reader.onload = e => setContractFile({ url: e.target?.result as string, name: files[0].name })
-    reader.readAsDataURL(files[0])
+    reader.onerror = () => setSigningError('图片读取失败，请重新上传')
+    reader.onload = e => setContractFile({ url: e.target?.result as string, name: file.name })
+    reader.readAsDataURL(file)
   }
 
   // Budget deviation check
@@ -238,16 +265,19 @@ export default function OpportunityDetail() {
   const healthTone = healthScore >= 80 ? 'healthy' : healthScore >= 65 ? 'watch' : healthScore >= 50 ? 'risk' : 'danger'
   const intentLevel = opp.amountRange === 'above50' || opp.amountRange === '20to50' ? '高意向' : opp.amountRange === '10to20' ? '中意向' : '培育中'
   const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : ['contacting', 'proposal'].includes(opp.stage) ? '完善需求方案并推动客户确认' : ['negotiation', 'signing'].includes(opp.stage) ? '推进报价谈判与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进交付验收与客户反馈' : '确认是否重新激活商机'
-  const productInterests = ['声访 AI 调研数字员工', '外呼 AI 电销数字员工']
+  const productInterestOptions = ['JM 声访', 'JM 外呼']
+  const productInterests = [productInterestOptions[0]]
   const productInterest = productInterests.join('、')
   const demandDescription = opp.requirementDescription?.trim() || ''
   const demandDescriptionChars = Array.from(demandDescription)
   const demandDescriptionDisplay = demandDescriptionChars.length > 120 ? `${demandDescriptionChars.slice(0, 120).join('')}…` : demandDescription
   const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
   const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError || contact.encryptedName ? '••••' : '待补充')
-  const salesTimelineItems = progressReports.length
-    ? progressReports.slice().reverse().map(item => ({ id: item.id, time: formatDate(item.createdAt), title: `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`, body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售更新' }))
-    : [{ id: 'stage-update', time: formatDate(opp.updatedAt), title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }]
+  const signedTimelineItem = opp.signedDate && typeof opp.signedAmount === 'number'
+    ? [{ id: 'signed-update', time: formatDate(opp.signedDate), title: '签约信息已确认', body: `签约金额 ${formatSignedAmount(opp.signedAmount)} 万元，签约时间 ${formatDate(opp.signedDate)}${opp.contractNo ? `，合同编号 ${opp.contractNo}` : ''}${opp.contractFileId ? '，已上传签约凭证' : ''}。`, type: 'manual', label: '销售更新' }]
+    : []
+  const progressTimelineItems = progressReports.slice().reverse().map(item => ({ id: item.id, time: formatDate(item.createdAt), title: `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`, body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售更新' }))
+  const salesTimelineItems = [...signedTimelineItem, ...progressTimelineItems, ...(!signedTimelineItem.length && !progressTimelineItems.length ? [{ id: 'stage-update', time: formatDate(opp.updatedAt), title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
   const timelineItems = [
     ...salesTimelineItems,
     { id: 'ai-summary', time: formatDate(opp.updatedAt), title: 'AI 销售伙伴总结', body: `${opp.customerName}当前处于「${stageName(opp.stage)}」，商机健康度 ${healthScore} 分。${riskText}`, type: 'ai', label: 'AI 总结' },
@@ -353,7 +383,7 @@ export default function OpportunityDetail() {
               <div className={`sx-field sx-contact-field ${!contact.encryptedName ? 'warn' : ''}`}><div><label>联系人 · {contact.level || '层级待补充'}</label><strong className="with-lock"><Lock size={12} />{contactName}{canViewContact && contact.encryptedName && !decryptedContact && <button className="sx-contact-eye" onClick={() => setShowContactConfirm(true)} disabled={contactLoading} aria-label="查看联系人" title="解密查看联系人"><Eye size={14} /></button>}</strong>{decryptedContact?.contact && <small className="sx-contact-value">{decryptedContact.contact}</small>}{contactError && <small className="sx-contact-error">{contactError}</small>}</div><span className="sx-contact-methods"><i className={contact.contactTypes.includes('wechat') ? 'active' : ''} title="微信"><MessageCircle size={15} /></i><i className={contact.contactTypes.includes('phone') ? 'active' : ''} title="手机号"><Phone size={15} /></i><i className={contact.contactTypes.includes('email') ? 'active' : ''} title="邮箱"><Mail size={15} /></i></span></div>
               <div className={`sx-field wide sx-demand-field ${!demandDescription ? 'warn' : ''}`}><label>需求场景</label><strong>{demandDescriptionDisplay || '待补充，最多支持 120 字'}</strong></div>
             </div>
-            {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div></div>}
+            {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div><div><span>签约凭证</span>{opp.contractFileId ? <button className="sx-contract-proof" onClick={() => setPreviewEvidence({ url: opp.contractFileId!, name: opp.contractNo ? `${opp.contractNo} 签约凭证` : '签约凭证' })}><ImageIcon size={14} />查看图片</button> : <strong>未上传</strong>}</div></div>}
           </article>
 
           <article className="sx-panel">
@@ -502,6 +532,10 @@ export default function OpportunityDetail() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px 24px' }}>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#111111', marginBottom: 6, display: 'block' }}>合同编号</label>
+                <input value={signing.contractNo} onChange={e => setSigning(s => ({ ...s, contractNo: e.target.value }))} placeholder="请输入合同编号（选填）" style={{ ...inputStyle, background: 'white', border: '1.5px solid #e5e5e5', borderRadius: 14 }} />
+              </div>
               {/* 签约金额 */}
               <div>
                 <label style={{ fontSize: 13, fontWeight: 600, color: '#111111', marginBottom: 6, display: 'block' }}>
@@ -540,18 +574,21 @@ export default function OpportunityDetail() {
                     </div>
                   </div>
                 ) : (
-                  <div onClick={() => contractFileRef.current?.click()}
+                  <label htmlFor="contract-file-upload"
                     style={{ height: 100, border: '1.5px dashed #d1d5db', borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', background: '#fafafa', color: '#9ca3af', transition: 'background 0.15s' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#f0fdf4')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#fafafa')}>
                     <Upload size={20} />
                     <span style={{ fontSize: 13 }}>点击上传截图</span>
-                  </div>
+                    <small style={{ fontSize: 10 }}>JPG、PNG、WebP，最大 4MB</small>
+                  </label>
                 )}
-                <input ref={contractFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                <input id="contract-file-upload" ref={contractFileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }}
                   onChange={e => { loadContractFile(e.target.files); e.target.value = '' }} />
               </div>
             </div>
+
+            {signingError && <div style={{ marginTop: 14, padding: '10px 13px', color: '#b42318', border: '1px solid #fecaca', borderRadius: 10, background: '#fff1f2', fontSize: 12 }}>{signingError}</div>}
 
             {needsReview && signing.signedAmount !== '' && (
               <div style={{ marginTop: 16, background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#d97706', fontWeight: 600 }}>
@@ -561,7 +598,7 @@ export default function OpportunityDetail() {
 
             {/* 确认签约 button */}
             {(() => {
-              const ready = !!signing.signedDate && !!signing.signedAmount
+              const ready = !!signing.signedDate && Number(signing.signedAmount) > 0 && !signingSubmitting
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 26 }}>
                   <button onClick={submitSigning} disabled={!ready} style={{
@@ -573,7 +610,7 @@ export default function OpportunityDetail() {
                     transition: 'all 0.2s',
                     letterSpacing: '0.5px',
                   }}>
-                    确认签约
+                    {signingSubmitting ? '提交中…' : '确认签约'}
                   </button>
                   <button onClick={() => setShowSigningModal(false)} style={{ background: 'none', border: 'none', fontSize: 14, color: '#6b7280', cursor: 'pointer', fontWeight: 500 }}>
                     取消
