@@ -1,17 +1,15 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Search, PlusCircle, Settings, FileText } from 'lucide-react'
+import { Search, PlusCircle, Settings, FileText } from 'lucide-react'
 import { useStore } from '../../store'
 import { roleName } from '../../utils'
 import type { UserRole } from '../../types'
 
 const userNavItems = [
-  { to: '/', icon: LayoutDashboard, label: '首页看板' },
   { to: '/query', icon: Search, label: '商机查询' },
   { to: '/report', icon: PlusCircle, label: '报备商机' },
 ]
 
 const adminNavItems = [
-  { to: '/', icon: LayoutDashboard, label: '首页看板' },
   { to: '/query', icon: Search, label: '商机查询' },
   { to: '/report', icon: PlusCircle, label: '报备商机' },
   { to: '/admin', icon: Settings, label: '管理后台' },
@@ -26,8 +24,7 @@ const navItems: Record<UserRole, typeof userNavItems> = {
 }
 
 export default function Sidebar() {
-  const { currentUser, users, switchUser, notifications } = useStore()
-  const unread = notifications.filter(n => n.userId === currentUser.id && !n.read).length
+  const { currentUser, users, switchUser } = useStore()
   const items = navItems[currentUser.role]
 
   return (
@@ -65,11 +62,6 @@ export default function Sidebar() {
           >
             <Icon size={16} />
             <span>{label}</span>
-            {label === '首页看板' && unread > 0 && (
-              <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {unread}
-              </span>
-            )}
           </NavLink>
         ))}
       </nav>
