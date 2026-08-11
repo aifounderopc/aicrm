@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Clock, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle } from 'lucide-react'
-import type { OpportunityStage, ProgressStatus } from '../types'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText } from 'lucide-react'
+import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, ApiError } from '../api'
 
@@ -31,30 +31,6 @@ const inputStyle = {
   boxSizing: 'border-box' as const, fontFamily: 'inherit',
 }
 
-const sectionCard: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.78)',
-  backdropFilter: 'blur(22px) saturate(1.6)',
-  WebkitBackdropFilter: 'blur(22px) saturate(1.6)',
-  border: '1px solid rgba(255,255,255,0.85)',
-  borderRadius: 20,
-  boxShadow: '0 2px 16px rgba(80,140,160,0.09), 0 1px 3px rgba(0,0,0,0.04)',
-  padding: '24px 26px', marginBottom: 16,
-}
-
-const sectionTitle = {
-  fontSize: 13, fontWeight: 700, color: '#6b7280', letterSpacing: '0.5px', textTransform: 'uppercase' as const,
-  marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8,
-}
-
-// Field displayed as a row: label left, value right
-const fieldRow = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  padding: '11px 0', borderBottom: '1px solid rgba(14,120,160,0.1)',
-} as const
-
-const fieldLabel = { fontSize: 12, color: '#7a9aaa', fontWeight: 500 }
-const fieldValue = { fontSize: 13, fontWeight: 600, color: '#111111', textAlign: 'right' as const }
-
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -67,7 +43,6 @@ export default function OpportunityDetail() {
 
   const opp = opportunities.find(o => o.id === id)
 
-  const [newStage, setNewStage] = useState<OpportunityStage>(opp?.stage ?? 'reporting')
   const [showProgressModal, setShowProgressModal] = useState(false)
   const [showSigningModal, setShowSigningModal] = useState(false)
   const [report, setReport] = useState({
@@ -91,6 +66,7 @@ export default function OpportunityDetail() {
   const [contactLoading, setContactLoading] = useState(false)
   const [contactError, setContactError] = useState('')
   const [previewEvidence, setPreviewEvidence] = useState<{ url: string; name: string } | null>(null)
+  const [groupBound, setGroupBound] = useState(false)
 
   // 每天 0 点自动刷新剩余天数（页面长时间挂着也能跨天更新）
   const [, setDayTick] = useState(0)
@@ -107,8 +83,10 @@ export default function OpportunityDetail() {
 
   const canViewContact = !!opp && (opp.salesOwnerId === currentUser.id || isAdminRole(currentUser.role))
 
+  const contactOpportunityId = opp?.id
+  const encryptedContactName = opp?.contact?.encryptedName
   useEffect(() => {
-    if (!opp || !canViewContact || !opp.contact?.encryptedName) {
+    if (!contactOpportunityId || !canViewContact || !encryptedContactName) {
       setDecryptedContact(null)
       setContactError('')
       return
@@ -117,7 +95,7 @@ export default function OpportunityDetail() {
     let cancelled = false
     setContactLoading(true)
     setContactError('')
-    opportunityApi.getContact(opp.id)
+    opportunityApi.getContact(contactOpportunityId)
       .then(contact => {
         if (!cancelled) setDecryptedContact(contact)
       })
@@ -129,7 +107,7 @@ export default function OpportunityDetail() {
       })
 
     return () => { cancelled = true }
-  }, [opp?.id, canViewContact, opp?.contact?.encryptedName])
+  }, [contactOpportunityId, canViewContact, encryptedContactName])
 
   if (!opp) {
     return (
@@ -215,21 +193,6 @@ export default function OpportunityDetail() {
     )
   }
 
-  const card: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.78)',
-    backdropFilter: 'blur(22px) saturate(1.6)',
-    WebkitBackdropFilter: 'blur(22px) saturate(1.6)',
-    border: '1px solid rgba(255,255,255,0.85)',
-    borderRadius: 18,
-    boxShadow: '0 2px 16px rgba(80,140,160,0.09), 0 1px 3px rgba(0,0,0,0.04)',
-    padding: '22px 24px', marginBottom: 16,
-  }
-
-  // Status colors for info rows
-  const infoRow = { display: 'flex', alignItems: 'flex-start', gap: 0, padding: '7px 0', borderBottom: '1px solid rgba(14,120,160,0.08)' } as const
-  const infoLabel = { fontSize: 12, color: '#7a9aaa', width: 72, flexShrink: 0, paddingTop: 1 }
-  const infoVal = { fontSize: 13, color: '#1a1a1a', fontWeight: 500, flex: 1 }
-  const cardTitle = { fontSize: 15, fontWeight: 700, color: '#111', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' as const }
   // 推进状态配色：与青蓝背景协调
   const statusMeta: Record<string, { label: string; dot: string; bg: string; text: string }> = {
     normal:     { label: '正常推进', dot: '#0e9dbf', bg: 'rgba(14,157,191,0.1)',  text: '#0a6a82' },
@@ -237,6 +200,23 @@ export default function OpportunityDetail() {
     paused:     { label: '暂缓',     dot: '#e8a020', bg: 'rgba(232,160,32,0.1)',  text: '#9a6210' },
     blocked:    { label: '遇到障碍', dot: '#e05050', bg: 'rgba(224,80,80,0.1)',   text: '#a02020' },
   }
+
+  const completenessFields = [opp.customerName, opp.companyName, opp.industry, opp.requirementDescription, opp.amountRange, contact.department, contact.level, contact.encryptedName, evidenceFiles.length]
+  const completenessScore = Math.round(completenessFields.filter(Boolean).length / completenessFields.length * 100)
+  const healthScore = Math.max(35, Math.min(98,
+    52 + (opp.stage === 'signing' ? 16 : opp.stage === 'signed' || opp.stage === 'delivery' ? 28 : 5)
+    + (evidenceFiles.length ? 8 : 0) + (progressReports.length ? 8 : 0) + (days > 7 || opp.lockedPermanently ? 8 : -10)
+  ))
+  const healthTone = healthScore >= 80 ? 'healthy' : healthScore >= 65 ? 'watch' : healthScore >= 50 ? 'risk' : 'danger'
+  const intentLevel = opp.amountRange === 'above50' || opp.amountRange === '20to50' ? '高意向' : opp.amountRange === '10to20' ? '中意向' : '培育中'
+  const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : opp.stage === 'signing' ? '推进合同条款确认与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进项目交付与客户反馈' : '确认是否重新激活商机'
+  const productInterest = `${opp.industry.replace(/\s*\/\s*/g, ' · ')}解决方案`
+  const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
+  const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError ? '••••' : '已加密')
+  const timelineItems = [
+    ...progressReports.slice().reverse().map(item => ({ id: item.id, time: formatDate(item.createdAt), title: statusMeta[item.status]?.label || '推进更新', body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售操作' })),
+    { id: 'created', time: formatDate(opp.reportedAt), title: '商机创建', body: `${opp.source === 'channel' ? '渠道报备' : '销售报备'}完成，进入商机保护并开始持续跟进。`, type: 'context', label: '商机上下文' },
+  ]
 
   return (
     <div>
@@ -264,7 +244,7 @@ export default function OpportunityDetail() {
                   <div onClick={() => setShowStageMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
                   <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: 'white', borderRadius: 12, boxShadow: '0 8px 30px rgba(0,0,0,0.12)', border: '1px solid #f0f2f5', minWidth: 160, zIndex: 100, overflow: 'hidden' }}>
                     {(['reporting','signing','signed','delivery'] as const).filter(s => pipelineOrder[s] >= pipelineOrder[opp.stage]).map(s => (
-                      <button key={s} onClick={() => { setShowStageMenu(false); setNewStage(s); if (s !== opp.stage) { if (s === 'signed') setShowSigningModal(true); else updateStage(opp.id, s) } }}
+                      <button key={s} onClick={() => { setShowStageMenu(false); if (s !== opp.stage) { if (s === 'signed') setShowSigningModal(true); else updateStage(opp.id, s) } }}
                         style={{ display: 'block', width: '100%', padding: '11px 16px', textAlign: 'left', border: 'none', background: s === opp.stage ? '#f0f0f0' : 'transparent', fontSize: 13, fontWeight: s === opp.stage ? 700 : 500, color: s === opp.stage ? '#111111' : '#374151', cursor: 'pointer' }}>
                         {stageName(s)}{s === opp.stage && ' ✓'}
                       </button>
@@ -294,330 +274,99 @@ export default function OpportunityDetail() {
         </div>
       )}
 
-      {/* ════════════════════════════════════════
-          主布局：左列(2/3) + 右列(1/3)
-          ════════════════════════════════════════ */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: 16, marginBottom: 16, alignItems: 'start' }}>
-
-        {/* 左列：客户信息 + 商机进度 + 举证材料 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-        {/* 客户信息卡片 */}
-        <div style={card}>
-          {/* Hero: 客户名 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, paddingBottom: 16, marginBottom: 16, borderBottom: '1px solid #f0f2f5' }}>
-            <div style={{ width: 56, height: 56, borderRadius: 16, background: '#1f2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: 'white', flexShrink: 0, boxShadow: '0 4px 14px rgba(0,0,0,0.18)', letterSpacing: '-1px' }}>
-              {initial}
+      <section className="sx-detail-summary">
+        <div className="sx-summary-main">
+          <div className="sx-account-mark">{initial}</div>
+          <div className="sx-account-copy">
+            <span className="sx-eyebrow">OPPORTUNITY PROFILE</span>
+            <h1>{opp.customerName}</h1>
+            <p>{opp.companyName || opp.customerName}</p>
+            <div className="sx-summary-tags">
+              <span style={{ background: sc.bg, color: sc.text }}>{stageName(opp.stage)}</span>
+              <span className="intent">{intentLevel}</span>
+              <span>{opp.industry}</span>
+              <span>{opp.source === 'channel' ? `渠道 · ${opp.channelName || '合作伙伴'}` : '直客商机'}</span>
+              <span className="complete">完整度 {completenessScore}%</span>
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px', lineHeight: 1.15, marginBottom: 8 }}>{opp.customerName}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>{stageName(opp.stage)}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, border: '1px solid #e5e7eb', color: '#374151' }}>{opp.industry}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, border: `1px solid ${opp.source === 'channel' ? '#bbf7d0' : '#bae6fd'}`, color: opp.source === 'channel' ? '#065f46' : '#0369a1' }}>{opp.source === 'direct' ? '直客' : '渠道'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Info grid — 去掉报备人和报备时间 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px', marginBottom: 16 }}>
-            {[
-              { label: '公司全称', value: opp.companyName || '—' },
-              { label: '渠道名称', value: opp.channelName || '—', hide: opp.source !== 'channel' },
-              { label: '客户预算', value: amountLabel(opp.amountRange) + ' 万元' },
-              { label: '首次接触', value: formatDate(opp.firstContactDate) },
-            ].filter(f => !f.hide).map((f, i, arr) => (
-              <div key={i} style={{ display: 'flex', gap: 8, padding: '9px 0', borderBottom: i < arr.length - 2 ? '1px solid #f5f6fa' : 'none' }}>
-                <span style={{ fontSize: 12, color: '#9ca3af', width: 72, flexShrink: 0, paddingTop: 1 }}>{f.label}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#111', flex: 1 }}>{f.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 联系人：需求部门 + 对接人职位 重点显示 */}
-          <div style={{ borderTop: '1px solid #f0f2f5', paddingTop: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>需求部门</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.department || '—'}</div>
-                </div>
-                <div style={{ width: 1, height: 28, background: '#e5e7eb' }} />
-                <div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 3 }}>客户对接人职位</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{contact.level}</div>
-                </div>
-              </div>
-              {/* 联系人姓名 + 联系方式 合并居右 */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-                {canViewContact && contact.encryptedName && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Lock size={10} style={{ color: '#9ca3af' }} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
-                      {contactLoading ? '解密中…' : decryptedContact?.name || (contactError ? '解密失败' : '已加密')}
-                    </span>
-                  </div>
-                )}
-                {canViewContact && decryptedContact?.contact && (
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{decryptedContact.contact}</div>
-                )}
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {contact.contactTypes.map(t => (
-                    <span key={t} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, border: '1px solid #e5e7eb', color: '#9ca3af' }}>
-                      {t === 'phone' ? '手机' : t === 'wechat' ? '微信' : '邮箱'}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Signing info */}
-          {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && (
-            <div style={{
-              marginTop: 16, borderRadius: 14, padding: '16px 18px',
-              background: 'linear-gradient(135deg, rgba(14,157,191,0.1) 0%, rgba(16,185,129,0.08) 100%)',
-              border: '1.5px solid rgba(14,157,191,0.22)',
-              display: 'flex', gap: 0,
-            }}>
-              <div style={{ flex: 1, borderRight: '1.5px solid rgba(14,157,191,0.18)', paddingRight: 18 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#0a8aaa', marginBottom: 6, letterSpacing: '0.3px' }}>签约金额</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: '#0a5e72', letterSpacing: '-1.5px', lineHeight: 1 }}>
-                  {typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}
-                  <span style={{ fontSize: 13, fontWeight: 600, marginLeft: 5, color: '#3a8a9a' }}>万元</span>
-                </div>
-              </div>
-              <div style={{ flex: 1, paddingLeft: 18, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#0a8aaa', marginBottom: 6, letterSpacing: '0.3px' }}>签约时间</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#0a5e72' }}>{formatDate(opp.signedDate)}</div>
-              </div>
-            </div>
-          )}
-
-        </div>
-
-        {/* 商机进度卡片 */}
-        <div style={{ ...card, marginBottom: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 20 }}>商机进度</div>
-          <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-            {pipeline.map((p, i) => {
-              const done = i < currentPipelineIdx
-              const active = i === currentPipelineIdx
-              const reached = done || active
-              const isLast = i === pipeline.length - 1
-              const stageDate = p.key === 'reporting' ? opp.reportedAt : p.key === 'signed' && opp.signedDate ? opp.signedDate : active || done ? opp.updatedAt : null
-              // 青蓝主色
-              const TEAL = '#0e9dbf'
-              const TEAL_LIGHT = 'rgba(14,157,191,0.12)'
-              return (
-                <div key={p.key} style={{ display: 'flex', alignItems: 'flex-start', flex: isLast ? 0 : 1 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                      background: done ? TEAL : active ? 'white' : 'rgba(200,225,235,0.4)',
-                      border: active ? `2.5px solid ${TEAL}` : done ? 'none' : '2px solid rgba(14,157,191,0.2)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: active ? `0 0 0 5px ${TEAL_LIGHT}` : done ? `0 2px 8px rgba(14,157,191,0.22)` : 'none',
-                    }}>
-                      {done
-                        ? <svg width="13" height="13" viewBox="0 0 12 10" fill="none"><polyline points="1 5 5 9 11 1" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        : active
-                          ? <div style={{ width: 10, height: 10, borderRadius: '50%', background: TEAL }} />
-                          : <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'rgba(14,157,191,0.3)' }} />}
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 12, fontWeight: active ? 700 : 500, color: active ? TEAL : done ? '#1f2937' : '#9ca3af', whiteSpace: 'nowrap' }}>{p.label}</div>
-                      <div style={{ fontSize: 11, color: reached ? '#5a8a9a' : 'rgba(14,157,191,0.3)', marginTop: 2, whiteSpace: 'nowrap' }}>{reached && stageDate ? formatDate(stageDate) : '—'}</div>
-                    </div>
-                  </div>
-                  {!isLast && (
-                    <div style={{
-                      flex: 1, height: 2, margin: '15px 8px 0', borderRadius: 2,
-                      background: done
-                        ? `linear-gradient(90deg, ${TEAL}, ${TEAL})`
-                        : 'rgba(14,157,191,0.15)',
-                    }} />
-                  )}
-                </div>
-              )
-            })}
           </div>
         </div>
+        <div className={`sx-health-ring ${healthTone}`} style={{ '--score': `${healthScore * 3.6}deg` } as React.CSSProperties}>
+          <strong>{healthScore}</strong><span>健康度</span>
+        </div>
+        <div className="sx-stage-bar">
+          {pipeline.map((item, index) => {
+            const state = index < currentPipelineIdx ? 'done' : index === currentPipelineIdx ? 'active' : ''
+            const stageDate = item.key === 'reporting' ? opp.reportedAt : item.key === 'signed' && opp.signedDate ? opp.signedDate : state ? opp.updatedAt : ''
+            return <div key={item.key} className={state}><i /><b>{item.label}</b><em>{stageDate ? formatDate(stageDate) : '—'}</em></div>
+          })}
+        </div>
+      </section>
 
-          {/* 举证材料 — 移入左列底部 */}
-          <div style={{ ...card, marginBottom: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={cardTitle}>举证材料</div>
-              <span style={{ fontSize: 11, color: '#9ca3af' }}>{evidenceFiles.length} 份附件</span>
+      <section className="sx-detail-workspace">
+        <div className="sx-detail-main">
+          <article className="sx-panel">
+            <header className="sx-panel-head"><div><span>核心信息</span><h2>商机字段</h2></div><small>AI 抽取 + 人工确认</small></header>
+            <div className="sx-field-grid">
+              <div className="sx-field"><label>商机名称</label><strong>{opp.customerName}</strong><small>{opp.companyName || '公司全称待补充'}</small></div>
+              <div className="sx-field"><label>产品兴趣</label><strong>{productInterest}</strong></div>
+              <div className="sx-field wide"><label>需求场景</label><strong>{opp.requirementDescription || '待补充'}</strong></div>
+              <div className={`sx-field ${!opp.amountRange ? 'warn' : ''}`}><label>预算</label><strong>{amountLabel(opp.amountRange)}</strong></div>
+              <div className="sx-field"><label>需求部门</label><strong>{contact.department || '待补充'}</strong></div>
+              <div className="sx-field"><label>商机类型</label><strong>{opp.source === 'channel' ? '渠道商机' : '直客商机'}</strong></div>
+              <div className="sx-field"><label>联系人 · {contact.level}</label><strong className="with-lock"><Lock size={12} />{contactName}</strong></div>
+              <div className="sx-field"><label>联系方式</label><strong>{contact.contactTypes.map(t => t === 'phone' ? '手机' : t === 'wechat' ? '微信' : '邮箱').join(' · ') || '待补充'}</strong></div>
             </div>
-            <div style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.4px', marginBottom: 8 }}>客户需求描述</div>
-              <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.8, borderLeft: '3px solid #e5e7eb', paddingLeft: 14 }}>{opp.requirementDescription || '—'}</div>
+            <div className="sx-owner-strip">
+              <div><span>销售负责人</span><strong>{users.find(u => u.id === opp.salesOwnerId)?.name ?? opp.salesOwnerName}</strong></div>
+              <div><span>协作人 / SA</span><strong>{opp.saOwnerName || '待分配'}</strong></div>
+              <div><span>首次接触</span><strong>{formatDate(opp.firstContactDate)}</strong></div>
+              <div><span>下一步动作</span><strong>{nextAction}</strong></div>
             </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.4px', marginBottom: 10 }}>客户沟通 / 拜访举证</div>
-              {evidenceFiles.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px,1fr))', gap: 8 }}>
-                  {evidenceFiles.map(f => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => { if (f.url) setPreviewEvidence({ url: f.url, name: f.name }) }}
-                      title={f.url ? '点击放大查看' : f.name}
-                      style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', background: '#f5f6fa', border: '1px solid #e8eaed', padding: 0, cursor: f.url ? 'zoom-in' : 'default' }}
-                    >
-                      {f.url
-                        ? <img src={f.url} alt={f.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                        : <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                            <ImageIcon size={18} style={{ color: '#d1d5db' }} />
-                            <div style={{ fontSize: 9, color: '#9ca3af', textAlign: 'center', padding: '0 4px' }}>{f.name}</div>
-                          </div>}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ height: 72, display: 'flex', alignItems: 'center', gap: 10, color: '#d1d5db' }}>
-                  <ImageIcon size={22} /><span style={{ fontSize: 13 }}>暂无举证截图</span>
-                </div>
-              )}
+            {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div></div>}
+          </article>
+
+          <article className="sx-panel">
+            <header className="sx-panel-head"><div><span>证据与来源</span><h2>来源与上下文</h2></div><small>{evidenceFiles.length} 份附件</small></header>
+            <div className="sx-context-grid">
+              <div><Link2 size={16} /><span>来源渠道</span><strong>{opp.source === 'channel' ? opp.channelName || '渠道伙伴' : 'Web 报备工作台'}</strong></div>
+              <div><MessageSquareText size={16} /><span>原文摘要</span><strong>{opp.requirementDescription}</strong></div>
+              <div><Target size={16} /><span>预算与决策</span><strong>{amountLabel(opp.amountRange)} · {contact.level}</strong></div>
             </div>
-          </div>
+            <div className="sx-evidence-row">
+              {evidenceFiles.length ? evidenceFiles.map(file => <button key={file.id} onClick={() => file.url && setPreviewEvidence({ url: file.url, name: file.name })}><span>{file.url ? <img src={file.url} alt="" /> : <ImageIcon size={18} />}</span><b>{file.name}</b><small>{formatDate(file.uploadedAt)}</small></button>) : <div className="sx-empty-evidence"><ImageIcon size={20} />暂无举证材料</div>}
+            </div>
+          </article>
 
-        </div>{/* end 左列 */}
-
-        {/* 右列：商机状态 + 推进进展 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-        {/* 商机状态卡片 */}
-        <div style={{ ...card, marginBottom: 0 }}>
-          <div style={{ ...cardTitle, marginBottom: 14 }}>商机状态 & 来源</div>
-
-          {/* Protection status */}
-          {(() => {
-            const isReleased = opp.stage === 'released'
-            const isLocked = opp.lockedPermanently
-            const isExpired = !isLocked && !isReleased && days <= 0
-            const isUrgent  = !isLocked && !isReleased && days >= 1 && days <= 7
-
-            let accentColor: string, bgTint: string, borderColor: string, statusLabel: string, subText: string, badgeLabel: string, pct: number
-            if (isReleased) {
-              accentColor = '#8aacb8'; bgTint = 'rgba(200,220,230,0.25)'; borderColor = 'rgba(14,120,160,0.2)'
-              statusLabel = '已释放'; badgeLabel = '保护已终止'
-              subText = opp.releasedAt ? `释放于 ${formatDate(opp.releasedAt)}` : `释放于 ${formatDate(opp.releaseAt)}`
-              pct = 0
-            } else if (isLocked) {
-              accentColor = '#0e9dbf'; bgTint = 'rgba(14,157,191,0.1)'; borderColor = 'rgba(14,157,191,0.32)'
-              statusLabel = '永久锁定'; badgeLabel = '持续锁定'
-              subText = '永久保护，无需续期'; pct = 1
-            } else if (isExpired) {
-              accentColor = '#d97706'; bgTint = 'rgba(217,119,6,0.1)'; borderColor = 'rgba(217,119,6,0.3)'
-              statusLabel = '保护已到期'; badgeLabel = '已到期'
-              subText = `已于 ${formatDate(opp.releaseAt)} 到期`; pct = 0
-            } else if (isUrgent) {
-              accentColor = '#e05050'; bgTint = 'rgba(224,80,80,0.1)'; borderColor = 'rgba(224,80,80,0.32)'
-              statusLabel = '保护即将到期'; badgeLabel = `⚠ 仅剩 ${days} 天`
-              subText = `到期 ${formatDate(opp.releaseAt)}`
-              pct = Math.max(0, Math.min(1, days / 30))
-            } else {
-              accentColor = '#059669'; bgTint = 'rgba(5,150,105,0.09)'; borderColor = 'rgba(5,150,105,0.3)'
-              statusLabel = '保护中'; badgeLabel = '保护有效'
-              subText = `到期 ${formatDate(opp.releaseAt)}`
-              pct = Math.max(0, Math.min(1, days / 30))
-            }
-
-            return (
-              <div style={{ background: bgTint, borderRadius: 14, border: `1.5px solid ${borderColor}`, padding: '16px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <Donut pct={pct} color={accentColor} size={84} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                      <div style={{ fontSize: (isReleased || isExpired) ? 18 : isLocked ? 22 : 28, fontWeight: 900, color: accentColor, lineHeight: 1 }}>
-                        {isLocked ? '∞' : (isReleased || isExpired) ? '—' : days}
-                      </div>
-                      {!isReleased && !isExpired && !isLocked && (
-                        <div style={{ fontSize: 10, fontWeight: 700, color: accentColor, opacity: 0.75, marginTop: 2 }}>天</div>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: accentColor, marginBottom: 3, letterSpacing: '-0.2px' }}>{statusLabel}</div>
-                    <div style={{ fontSize: 12, color: accentColor, opacity: 0.75, marginBottom: 8, lineHeight: 1.5 }}>{subText}</div>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 11px', borderRadius: 20, background: 'rgba(255,255,255,0.7)', border: `1.5px solid ${accentColor}`, color: accentColor }}>
-                      {badgeLabel}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* 报备人信息 — 移到此处 */}
-          <div style={{ borderTop: '1px solid rgba(14,120,160,0.1)', paddingTop: 12 }}>
-            {[
-              { label: '报备人', value: users.find(u => u.id === opp.salesOwnerId)?.name ?? opp.salesOwnerName },
-              { label: '角色', value: opp.source === 'channel' ? '渠道' : '直客销售' },
-              opp.channelName ? { label: '渠道', value: opp.channelName } : null,
-              { label: '报备时间', value: formatDate(opp.reportedAt) },
-              opp.source === 'channel' ? { label: 'JD 渠道经理', value: opp.channelManagerName || '—' } : null,
-            ].filter(Boolean).map((item, i, arr) => item && (
-              <div key={i} style={{ display: 'flex', gap: 8, padding: '7px 0', borderBottom: i < arr.length - 1 ? '1px solid rgba(14,120,160,0.08)' : 'none' }}>
-                <span style={{ fontSize: 12, color: '#7a9aaa', width: 78, flexShrink: 0 }}>{item.label}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{item.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Renewal button */}
-          {canEdit && !opp.lockedPermanently && days <= 7 && isOwner && opp.stage !== 'released' && (
-            <button onClick={() => { requestRenewal(opp.id); navigate('/my') }} style={{ marginTop: 14, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px', borderRadius: 10, border: '1.5px solid #fcd34d', background: 'transparent', color: '#d97706', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <Clock size={13} /> 申请续期 +30天
-            </button>
-          )}
+          <article className="sx-panel">
+            <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && opp.stage !== 'released' && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupBound ? 'bound' : ''} onClick={() => setGroupBound(value => !value)}><Users size={13} />{groupBound ? '群巡检已开启' : '绑定商机群'}</button></div></header>
+            <div className="sx-progress-axis">
+              {timelineItems.map((item, index) => <div key={item.id} className={`sx-progress-item ${item.type}`}><time>{item.time}</time><i>{index < timelineItems.length - 1 && <span />}</i><div><header><strong>{item.title}</strong><em>{item.label}</em></header><p>{item.body}</p></div></div>)}
+            </div>
+          </article>
         </div>
 
-        {/* 推进进展 — 垂直时间轴 */}
-        <div style={{ ...card, marginBottom: 0, maxHeight: 520, overflowY: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div style={{ ...cardTitle, marginBottom: 0 }}>推进信息补充</div>
-            {canEdit && opp.stage !== 'signed' && opp.stage !== 'delivery' && opp.stage !== 'released' && !opp.isFrozen && (
-              <button onClick={() => setShowProgressModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'white', background: 'linear-gradient(135deg, #0a6a82, #0e9dbf)', border: 'none', borderRadius: 8, padding: '5px 14px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(14,157,191,0.3)' }}>
-                <FileText size={12} /> 新增
-              </button>
-            )}
-          </div>
-          {progressReports.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 120, color: '#d1d5db', gap: 8 }}>
-              <Send size={22} />
-              <span style={{ fontSize: 13 }}>暂无推进记录</span>
-            </div>
-          ) : (
-            <div>
-              {progressReports.slice().reverse().map((r, idx, arr) => {
-                const meta = statusMeta[r.status] || statusMeta.normal
-                const isLast = idx === arr.length - 1
-                return (
-                  <div key={r.id} style={{ display: 'flex', gap: 12 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: meta.dot, marginTop: 4, flexShrink: 0, boxShadow: `0 0 0 3px ${meta.dot}22` }} />
-                      {!isLast && <div style={{ width: 2, flex: 1, background: 'rgba(14,120,160,0.15)', margin: '4px 0' }} />}
-                    </div>
-                    <div style={{ flex: 1, paddingBottom: isLast ? 0 : 18 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: meta.bg, color: meta.text }}>{meta.label}</span>
-                        <span style={{ fontSize: 11, color: '#9ca3af' }}>{formatDate(r.createdAt)}</span>
-                        {r.estimatedSignDate && <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 'auto' }}>预计签约 {formatDate(r.estimatedSignDate)}</span>}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.7, borderLeft: `2px solid ${meta.dot}`, paddingLeft: 10 }}>{r.description}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+        <aside className="sx-detail-side">
+          <article className="sx-panel sx-protection-panel">
+            <header className="sx-panel-head"><div><span>PROTECTION</span><h2>商机保护状态</h2></div>{canEdit && !opp.lockedPermanently && days <= 7 && isOwner && opp.stage !== 'released' && <button className="sx-renew" onClick={() => { requestRenewal(opp.id); navigate('/my') }}>申请续期</button>}</header>
+            {(() => {
+              const released = opp.stage === 'released', expired = !opp.lockedPermanently && !released && days <= 0, urgent = !opp.lockedPermanently && !released && days <= 7
+              const color = released ? '#8b98a8' : expired || urgent ? '#d99212' : opp.lockedPermanently ? '#1657c8' : '#00a36c'
+              const label = released ? '已释放' : expired ? '保护已到期' : urgent ? '即将到期' : opp.lockedPermanently ? '永久锁定' : '保护中'
+              return <div className="sx-protection-card" style={{ '--protect': color } as React.CSSProperties}><div className="sx-protect-ring"><Donut pct={opp.lockedPermanently ? 1 : Math.max(0, Math.min(1, days / 30))} color={color} size={88} /><span><strong>{opp.lockedPermanently ? '∞' : released || expired ? '—' : days}</strong>{!opp.lockedPermanently && !released && !expired && <small>天</small>}</span></div><div><h3>{label}</h3><p>{opp.lockedPermanently ? '永久保护，无需续期' : `保护到期 ${formatDate(opp.releaseAt)}`}</p><b>{released ? '保护已终止' : urgent ? `仅剩 ${Math.max(days, 0)} 天` : '保护有效'}</b></div></div>
+            })()}
+            <div className="sx-protection-meta"><div><span>保护负责人</span><strong>{opp.salesOwnerName}</strong></div><div><span>报备时间</span><strong>{formatDate(opp.reportedAt)}</strong></div><div><span>来源类型</span><strong>{opp.source === 'channel' ? '渠道伙伴' : '销售自报'}</strong></div><div><span>渠道经理</span><strong>{opp.channelManagerName || '—'}</strong></div></div>
+          </article>
 
-        </div>{/* end 右列 */}
-      </div>{/* end 主布局 grid */}
+          <article className="sx-panel sx-ai-panel">
+            <header className="sx-panel-head"><div><span>OPPORTUNITY X-RAY</span><h2>Scale X 商机参谋</h2></div><Sparkles size={18} /></header>
+            <section className="hero"><h3>商机解读</h3><p>{opp.customerName}当前处于{stageName(opp.stage)}阶段，{intentLevel}，健康度 {healthScore} 分。</p></section>
+            <section><h3>赢单机会</h3><ul><li>{productInterest}与客户当前需求场景匹配。</li><li>预算口径为{amountLabel(opp.amountRange)}。</li></ul></section>
+            <section className="risk"><h3>风险提醒</h3><ul><li>{riskText}</li></ul></section>
+            <section><h3>下一步行动</h3><ul><li>{nextAction}</li><li>{groupBound ? '持续关注商机群巡检报告。' : '建议绑定商机群，自动沉淀客户上下文。'}</li></ul></section>
+            <button className="sx-script-btn" onClick={() => navigate(`/?prompt=${encodeURIComponent(`帮我为${opp.customerName}生成跟进话术`)}`)}><Sparkles size={14} />生成跟进话术</button>
+          </article>
+        </aside>
+      </section>
 
       {previewEvidence && (
         <div
