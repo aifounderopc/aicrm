@@ -116,10 +116,17 @@ export default function OpportunityPool() {
   const currentPage = Math.min(page, pageCount)
   const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
   const changeFilter = (value: PoolFilter) => { setFilter(value); setPage(1) }
+  const filterCounts: Record<PoolFilter, number> = {
+    all: visible.length,
+    high: visible.filter(isHigh).length,
+    conflict: duplicateIds.size,
+    incomplete: visible.filter(item => item.stage === 'reporting' || isIncomplete(item)).length,
+    expiring: visible.filter(isExpiring).length,
+  }
 
   return <main className="opportunity-pool-page">
     <header className="pool-page-head">
-      <div><span className="pool-eyebrow">OPPORTUNITY PIPELINE</span><h1>商机池</h1><p>集中查看全量商机状态，识别高意向、撞单风险与即将释放的机会。</p></div>
+      <div><h1>商机池</h1><p>集中查看全量商机状态，识别高意向、撞单风险与即将释放的机会。</p></div>
       <button className="pool-ai-report" onClick={() => navigate('/report')}><Bot size={17}/><span>AI 报备</span><ArrowRight size={15}/></button>
     </header>
 
@@ -137,7 +144,7 @@ export default function OpportunityPool() {
       <article className="pool-insight-card signing-card">
         <header><div><span>SIGNING PROGRESS</span><h2>签约进度</h2></div><em>累计签约</em></header>
         <div className="pool-signing-content">
-          <div className="pool-donut" style={{ '--signed': `${signedEnd}%`, '--running': `${runningEnd}%` } as React.CSSProperties}><div><strong>{signedEnd}%</strong><span>签约率</span></div></div>
+          <div className="pool-donut" aria-label={`已签约占比 ${signedEnd}%`} style={{ '--signed': `${signedEnd}%`, '--running': `${runningEnd}%` } as React.CSSProperties}/>
           <div className="pool-signing-summary"><small>累计签约金额</small><strong>{formatSignedAmount(signedAmount)}<em> 万元</em></strong><div><span><i className="signed"/>已签约 <b>{signed.length}</b></span><span><i className="running"/>推进中 <b>{running.length}</b></span><span><i className="released"/>已释放 <b>{released.length}</b></span></div></div>
         </div>
       </article>
@@ -147,7 +154,7 @@ export default function OpportunityPool() {
       <div className="pool-toolbar">
         <div className="pool-filters">{([
           ['all','全部'], ['high','高意向'], ['conflict','疑似撞单'], ['incomplete','待补全'], ['expiring','即将释放'],
-        ] as [PoolFilter,string][]).map(([value,label]) => <button key={value} className={filter === value ? 'active' : ''} onClick={() => changeFilter(value)}>{label}</button>)}</div>
+        ] as [PoolFilter,string][]).map(([value,label]) => <button key={value} className={filter === value ? 'active' : ''} onClick={() => changeFilter(value)}>{label}<span>{filterCounts[value]}</span></button>)}</div>
         <div className="pool-tools"><label><Search size={15}/><input value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} placeholder="搜索客户、公司或负责人"/><span>{filtered.length} 条</span></label><div className="pool-view-switch"><button aria-label="卡片视图" className={view === 'card' ? 'active' : ''} onClick={() => setView('card')}><LayoutGrid size={16}/></button><button aria-label="列表视图" className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}><List size={17}/></button></div></div>
       </div>
 
