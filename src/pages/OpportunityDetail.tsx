@@ -317,8 +317,11 @@ export default function OpportunityDetail() {
             </div>
           </div>
         </div>
-        <div className={`sx-health-ring ${healthTone}`} style={{ '--score': `${healthScore * 3.6}deg` } as React.CSSProperties}>
-          <strong>{healthScore}</strong><span>健康度</span>
+        <div className="sx-health-block">
+          <div className={`sx-health-ring ${healthTone}`} style={{ '--score': `${healthScore * 3.6}deg` } as React.CSSProperties}>
+            <strong>{healthScore}</strong>
+          </div>
+          <span>商家健康度</span>
         </div>
         <div className="sx-stage-bar" style={{ gridTemplateColumns: `repeat(${displayPipeline.length}, minmax(0, 1fr))` }}>
           {displayPipeline.map((item, index) => {
