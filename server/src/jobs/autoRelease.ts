@@ -6,7 +6,7 @@ import { prisma } from '../db.js'
 export async function runAutoRelease() {
   const now = new Date()
   const expired = await prisma.opportunity.findMany({
-    where: { stage: { in: ['reporting', 'signing'] }, lockedPermanently: false, releaseAt: { lt: now } },
+    where: { stage: { in: ['reporting', 'contacting', 'proposal', 'negotiation', 'signing'] }, lockedPermanently: false, releaseAt: { lt: now } },
     select: { id: true, customerName: true, salesOwnerId: true },
   })
 
@@ -21,7 +21,7 @@ export async function runAutoRelease() {
   // 即将到期（≤7 天）提醒：每个商机每天最多提醒一次（按当天是否已存在同类通知粗略判断）
   const soon = await prisma.opportunity.findMany({
     where: {
-      stage: { in: ['reporting', 'signing'] }, lockedPermanently: false,
+      stage: { in: ['reporting', 'contacting', 'proposal', 'negotiation', 'signing'] }, lockedPermanently: false,
       releaseAt: { gte: now, lte: new Date(now.getTime() + 7 * 86400_000) },
     },
     select: { id: true, customerName: true, salesOwnerId: true, releaseAt: true },

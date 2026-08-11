@@ -18,9 +18,13 @@ enum UserRole {
 
 enum OpportunityStage {
   reporting
+  contacting
+  proposal
+  negotiation
   signing
   delivery
   signed
+  closed
   released
 }
 

@@ -177,7 +177,7 @@ export const useStore = create<Store>()(
       },
 
       detectCollision: (name, industry, companyName) => {
-        const active = get().opportunities.filter(o => o.stage !== 'released')
+        const active = get().opportunities.filter(o => !['released', 'closed'].includes(o.stage))
 
         const SUFFIXES = ['有限公司', '股份有限公司', '集团有限公司', '科技有限公司', '技术有限公司', '集团', '科技', '技术', '电子', '信息', '网络', '控股', '企业', '公司']
         const CITIES = ['北京', '上海', '深圳', '广州', '杭州', '成都', '南京', '武汉', '西安', '重庆', '天津', '苏州', '宁波', '青岛', '厦门', '长沙', '郑州', '合肥', '济南', '福州']
@@ -863,12 +863,12 @@ export const useStore = create<Store>()(
       processAutoReleases: () => {
         const now = new Date().toISOString()
         const expired = get().opportunities.filter(
-          o => o.stage !== 'released' && !o.lockedPermanently && o.releaseAt < now
+          o => !['released', 'closed'].includes(o.stage) && !o.lockedPermanently && o.releaseAt < now
         )
         if (expired.length === 0) return
         set(s => ({
           opportunities: s.opportunities.map(o => {
-            if (o.stage === 'released' || o.lockedPermanently || o.releaseAt >= now) return o
+            if (['released', 'closed'].includes(o.stage) || o.lockedPermanently || o.releaseAt >= now) return o
             return { ...o, stage: 'released', releasedAt: now, releaseReason: '保护期到期自动释放', releasedBy: 'system', updatedAt: now }
           })
         }))

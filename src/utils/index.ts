@@ -68,9 +68,13 @@ export function editDistance(a: string, b: string): number {
 export function stageName(stage: string): string {
   const map: Record<string, string> = {
     reporting: '初接触',
-    signing: '签约中',
-    delivery: '项目交付',
+    contacting: '需求沟通',
+    proposal: '方案确认',
+    negotiation: '报价谈判',
+    signing: '报价谈判',
+    delivery: '已交付',
     signed: '已签约',
+    closed: '已关闭',
     released: '已释放',
   }
   return map[stage] ?? stage
@@ -79,9 +83,13 @@ export function stageName(stage: string): string {
 export function stageColor(stage: string): string {
   const map: Record<string, string> = {
     reporting: 'bg-blue-100 text-blue-700',
+    contacting: 'bg-cyan-100 text-cyan-700',
+    proposal: 'bg-indigo-100 text-indigo-700',
+    negotiation: 'bg-yellow-100 text-yellow-700',
     signing: 'bg-yellow-100 text-yellow-700',
     delivery: 'bg-purple-100 text-purple-700',
     signed: 'bg-green-100 text-green-700',
+    closed: 'bg-gray-100 text-gray-600',
     released: 'bg-gray-100 text-gray-500',
   }
   return map[stage] ?? 'bg-gray-100 text-gray-500'

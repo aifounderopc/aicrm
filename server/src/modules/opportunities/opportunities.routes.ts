@@ -75,7 +75,7 @@ opportunityRouter.get('/', ah(async (req, res) => {
 // 活跃商机候选（撞单用）
 async function activeCandidates(industry?: string): Promise<CollisionCandidate[]> {
   const rows = await prisma.opportunity.findMany({
-    where: { stage: { not: 'released' } },
+    where: { stage: { notIn: ['released', 'closed'] } },
     select: { id: true, customerNameNorm: true, industry: true, stage: true },
   })
   return industry ? rows : rows
@@ -140,7 +140,7 @@ opportunityRouter.post('/', ah(async (req, res) => {
 
   const opp = await prisma.$transaction(async (tx) => {
     const actives = await tx.opportunity.findMany({
-      where: { stage: { not: 'released' } },
+      where: { stage: { notIn: ['released', 'closed'] } },
       select: { id: true, customerNameNorm: true, industry: true, stage: true },
     })
     const { collision } = detectCollision(input.customerName, input.industry, actives)
@@ -195,7 +195,7 @@ opportunityRouter.post('/', ah(async (req, res) => {
 
 // PATCH /opportunities/:id/stage —— signed/delivery 自动永久锁定
 const stageSchema = z.object({
-  stage: z.enum(['reporting', 'signing', 'delivery', 'signed', 'released']),
+  stage: z.enum(['reporting', 'contacting', 'proposal', 'negotiation', 'signing', 'delivery', 'signed', 'closed', 'released']),
   signingInfo: z.object({ contractNo: z.string(), signedDate: z.string(), signedAmount: z.number(), contractFileKey: z.string().optional() }).optional(),
 })
 opportunityRouter.patch('/:id/stage', ah(async (req, res) => {

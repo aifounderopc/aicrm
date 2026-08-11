@@ -28,7 +28,7 @@ function scoreFor(opp: Opportunity) {
 }
 
 function stageText(stage: Opportunity['stage']) {
-  return ({ reporting: '初接触', signing: '签约中', signed: '已签约', delivery: '交付中', released: '已释放' } as const)[stage]
+  return ({ reporting: '初接触', contacting: '需求沟通', proposal: '方案确认', negotiation: '报价谈判', signing: '报价谈判', signed: '已签约', delivery: '已交付', closed: '已关闭', released: '已释放' } as const)[stage]
 }
 
 function greetingText(hour = new Date().getHours()) {
@@ -64,7 +64,7 @@ export default function SalesPartner() {
     return opportunities.filter(o => o.salesOwnerId === currentUser.id || o.saOwnerId === currentUser.id)
   }, [currentUser, opportunities])
 
-  const active = visibleOpps.filter(o => o.stage !== 'released')
+  const active = visibleOpps.filter(o => !['released', 'closed'].includes(o.stage))
   const ranked = [...active].sort((a, b) => scoreFor(b) - scoreFor(a))
   const urgent = [...active].sort((a, b) => daysUntil(a.releaseAt) - daysUntil(b.releaseAt))
   const channels: Exclude<SignalChannel, 'all'>[] = ['jingme', 'feishu', 'email', 'meeting']

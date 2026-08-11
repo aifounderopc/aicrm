@@ -7,9 +7,13 @@ import type { Opportunity } from '../types'
 
 const stageColors: Record<string, { bg: string; text: string }> = {
   reporting: { bg: 'rgba(184,92,32,0.12)', text: '#b85c20' },
+  contacting:{ bg: 'rgba(14,157,191,0.12)', text: '#08758d' },
+  proposal:  { bg: 'rgba(83,86,184,0.12)', text: '#5356b8' },
+  negotiation:{ bg: 'rgba(154,110,0,0.12)', text: '#9a6e00' },
   signing:   { bg: 'rgba(154,110,0,0.12)',  text: '#9a6e00' },
   delivery:  { bg: 'rgba(72,48,184,0.12)',  text: '#4830b8' },
   signed:    { bg: 'rgba(10,122,82,0.12)',  text: '#0a7a52' },
+  closed:    { bg: 'rgba(107,114,128,0.1)', text: '#6b7280' },
   released:  { bg: 'rgba(107,114,128,0.1)', text: '#6b7280' },
 }
 
@@ -23,7 +27,7 @@ export default function Query() {
     if (!query.trim()) return
     const q = query.trim().toLowerCase()
     const now = new Date().toISOString()
-    const isExpiredOrReleased = (o: Opportunity) => o.stage === 'released' || (!o.lockedPermanently && o.releaseAt < now)
+    const isExpiredOrReleased = (o: Opportunity) => ['released', 'closed'].includes(o.stage) || (!o.lockedPermanently && o.releaseAt < now)
     const active = opportunities.filter(o => !isExpiredOrReleased(o) && o.customerName.toLowerCase().includes(q))
     const released = opportunities.filter(o => isExpiredOrReleased(o) && o.customerName.toLowerCase().includes(q))
     setResults({ active, released })

@@ -125,10 +125,14 @@ const STAGE_CARD: Record<string, {
     shadow: 'rgba(0,0,0,0.06)',
   },
 }
+STAGE_CARD.contacting = STAGE_CARD.reporting
+STAGE_CARD.proposal = STAGE_CARD.reporting
+STAGE_CARD.negotiation = STAGE_CARD.signing
+STAGE_CARD.closed = STAGE_CARD.released
 
-const PIPELINE = ['reporting', 'signing', 'signed', 'delivery'] as const
+const PIPELINE = ['reporting', 'contacting', 'proposal', 'negotiation', 'signed', 'delivery'] as const
 const PIPELINE_LABEL: Record<string, string> = {
-  reporting: '初接触', signing: '签约中', signed: '已签约', delivery: '交付中',
+  reporting: '初接触', contacting: '需求沟通', proposal: '方案确认', negotiation: '报价谈判', signing: '报价谈判', signed: '已签约', delivery: '已交付', closed: '已关闭',
 }
 
 

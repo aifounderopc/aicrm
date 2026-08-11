@@ -54,10 +54,14 @@ const STAGE_CARD: Record<string, {
     shadow: 'rgba(0,0,0,0.06)',
   },
 }
+STAGE_CARD.contacting = STAGE_CARD.reporting
+STAGE_CARD.proposal = STAGE_CARD.reporting
+STAGE_CARD.negotiation = STAGE_CARD.signing
+STAGE_CARD.closed = STAGE_CARD.released
 
-const PIPELINE = ['reporting', 'signing', 'signed', 'delivery'] as const
+const PIPELINE = ['reporting', 'contacting', 'proposal', 'negotiation', 'signed', 'delivery'] as const
 const PIPELINE_LABEL: Record<string, string> = {
-  reporting: '初接触', signing: '签约中', signed: '已签约', delivery: '交付中',
+  reporting: '初接触', contacting: '需求沟通', proposal: '方案确认', negotiation: '报价谈判', signing: '报价谈判', signed: '已签约', delivery: '已交付', closed: '已关闭',
 }
 
 function TaskCard({ opp, isAdmin }: { opp: Opportunity; isAdmin: boolean }) {
@@ -237,8 +241,8 @@ export default function Dashboard() {
     return opportunities.filter(o => o.salesOwnerId === currentUser.id)
   }, [opportunities, currentUser])
 
-  const active = myOpps.filter(o => o.stage !== 'released')
-  const protected_ = myOpps.filter(o => o.stage !== 'released' && (o.lockedPermanently || daysUntil(o.releaseAt) > 0))
+  const active = myOpps.filter(o => !['released', 'closed'].includes(o.stage))
+  const protected_ = myOpps.filter(o => !['released', 'closed'].includes(o.stage) && (o.lockedPermanently || daysUntil(o.releaseAt) > 0))
   const thisMonth = myOpps.filter(o => {
     const d = new Date(o.reportedAt)
     const now = new Date()

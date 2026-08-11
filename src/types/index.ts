@@ -16,9 +16,13 @@ export interface User {
 
 export type OpportunityStage =
   | 'reporting'   // 报备中
-  | 'signing'     // 签约中
-  | 'delivery'    // 项目交付
+  | 'contacting'  // 需求沟通
+  | 'proposal'    // 方案确认
+  | 'negotiation' // 报价谈判
+  | 'signing'     // 兼容历史签约中数据
   | 'signed'      // 已签约
+  | 'delivery'    // 已交付
+  | 'closed'      // 已关闭
   | 'released'    // 已释放
 
 export type IndustryType =

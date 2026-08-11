@@ -2,27 +2,36 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText, Phone, Mail, MessageCircle, Plus, Trash2 } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, ApiError } from '../api'
 
 const stageConfig: Record<string, { bg: string; text: string; bar: string }> = {
   reporting: { bg: '#f3f4f6', text: '#374151', bar: '#9ca3af' },
+  contacting: { bg: '#e7f8fb', text: '#08758d', bar: '#25a9c2' },
+  proposal: { bg: '#eef0ff', text: '#5356b8', bar: '#7478dc' },
+  negotiation: { bg: '#fef3c7', text: '#b96508', bar: '#e9a529' },
   signing:   { bg: '#fef3c7', text: '#d97706', bar: '#fbbf24' },
   delivery:  { bg: '#e0f2fe', text: '#0369a1', bar: '#38bdf8' },
   signed:    { bg: '#d1fae5', text: '#065f46', bar: '#34d399' },
+  closed:    { bg: '#eef1f3', text: '#66737b', bar: '#98a5ad' },
   released:  { bg: '#f3f4f6', text: '#6b7280', bar: '#d1d5db' },
 }
 
 // Visual pipeline stages (for display only)
 const pipeline = [
   { key: 'reporting', label: '初接触' },
-  { key: 'signing',   label: '签约中' },
+  { key: 'contacting', label: '需求沟通' },
+  { key: 'proposal', label: '方案确认' },
+  { key: 'negotiation', label: '报价谈判' },
   { key: 'signed',    label: '已签约' },
-  { key: 'delivery',  label: '项目交付' },
+  { key: 'delivery',  label: '已交付' },
 ]
-const pipelineOrder: Record<string, number> = { reporting: 0, signing: 1, signed: 2, delivery: 3, released: 4 }
+const pipelineOrder: Record<string, number> = { reporting: 0, contacting: 1, proposal: 2, negotiation: 3, signing: 3, signed: 4, delivery: 5, closed: 6, released: 6 }
+
+type GroupBinding = { channel: string; groupId: string; groupName: string }
+type GroupInspectionConfig = { enabled: boolean; frequency: string; time: string; range: string; output: string; groups: GroupBinding[] }
 
 const inputStyle = {
   width: '100%', padding: '10px 13px', fontSize: 13,
@@ -36,7 +45,7 @@ export default function OpportunityDetail() {
   const navigate = useNavigate()
   const isMobile = useMobile()
   const {
-    opportunities, users, currentUser, updateStage, requestRenewal, addProgressReport,
+    opportunities, currentUser, updateStage, requestRenewal, addProgressReport,
     releaseOpportunity, freezeOpportunity, approveEvidence, rejectEvidence,
     approveRenewal, rejectRenewal, deleteOpportunity,
   } = useStore()
@@ -66,7 +75,10 @@ export default function OpportunityDetail() {
   const [contactLoading, setContactLoading] = useState(false)
   const [contactError, setContactError] = useState('')
   const [previewEvidence, setPreviewEvidence] = useState<{ url: string; name: string } | null>(null)
-  const [groupBound, setGroupBound] = useState(false)
+  const [showGroupInspection, setShowGroupInspection] = useState(false)
+  const [groupSaved, setGroupSaved] = useState(false)
+  const [groupError, setGroupError] = useState('')
+  const [groupConfig, setGroupConfig] = useState<GroupInspectionConfig>({ enabled: true, frequency: '每日', time: '20:00', range: '最近 24 小时消息', output: '生成商机维护报告', groups: [{ channel: '飞书', groupId: '', groupName: '' }] })
 
   // 每天 0 点自动刷新剩余天数（页面长时间挂着也能跨天更新）
   const [, setDayTick] = useState(0)
@@ -109,6 +121,16 @@ export default function OpportunityDetail() {
     return () => { cancelled = true }
   }, [contactOpportunityId, canViewContact, encryptedContactName])
 
+  useEffect(() => {
+    if (!contactOpportunityId) return
+    const saved = window.localStorage.getItem(`group-inspection-${contactOpportunityId}`)
+    if (!saved) return
+    try {
+      setGroupConfig(JSON.parse(saved) as GroupInspectionConfig)
+      setGroupSaved(true)
+    } catch { /* 忽略损坏的本地配置 */ }
+  }, [contactOpportunityId])
+
   if (!opp) {
     return (
       <div style={{ textAlign: 'center', padding: '80px 0', color: '#9ca3af' }}>
@@ -133,10 +155,23 @@ export default function OpportunityDetail() {
   const evidenceFiles = opp.evidenceFiles ?? []
   const pendingRenewals = renewalRequests.filter(r => r.status === 'pending')
   const currentPipelineIdx = pipelineOrder[opp.stage] ?? 0
+  const displayPipeline = opp.stage === 'closed' ? [...pipeline, { key: 'closed', label: '已关闭' }] : pipeline
 
   const submitReport = () => {
     addProgressReport({ opportunityId: opp.id, reporterId: currentUser.id, ...report })
     setShowProgressModal(false)
+  }
+
+  const saveGroupInspection = () => {
+    const invalid = groupConfig.groups.some(group => !group.groupId.trim() || !group.groupName.trim())
+    if (!groupConfig.groups.length || invalid) {
+      setGroupError('请完整填写至少一个商机群的群 ID 和群名称')
+      return
+    }
+    window.localStorage.setItem(`group-inspection-${opp.id}`, JSON.stringify(groupConfig))
+    setGroupSaved(true)
+    setGroupError('')
+    setShowGroupInspection(false)
   }
 
 
@@ -178,8 +213,6 @@ export default function OpportunityDetail() {
     navigate('/my')
   }
 
-  const initial = opp.customerName.charAt(0)
-
   // Donut SVG helper
   const Donut = ({ pct, color, size = 64 }: { pct: number; color: string; size?: number }) => {
     const r = size / 2 - 5, c = 2 * Math.PI * r
@@ -204,12 +237,12 @@ export default function OpportunityDetail() {
   const completenessFields = [opp.customerName, opp.companyName, opp.industry, opp.requirementDescription, opp.amountRange, contact.department, contact.level, contact.encryptedName, evidenceFiles.length]
   const completenessScore = Math.round(completenessFields.filter(Boolean).length / completenessFields.length * 100)
   const healthScore = Math.max(35, Math.min(98,
-    52 + (opp.stage === 'signing' ? 16 : opp.stage === 'signed' || opp.stage === 'delivery' ? 28 : 5)
+    52 + (['contacting', 'proposal', 'negotiation', 'signing'].includes(opp.stage) ? 16 : opp.stage === 'signed' || opp.stage === 'delivery' ? 28 : 5)
     + (evidenceFiles.length ? 8 : 0) + (progressReports.length ? 8 : 0) + (days > 7 || opp.lockedPermanently ? 8 : -10)
   ))
   const healthTone = healthScore >= 80 ? 'healthy' : healthScore >= 65 ? 'watch' : healthScore >= 50 ? 'risk' : 'danger'
   const intentLevel = opp.amountRange === 'above50' || opp.amountRange === '20to50' ? '高意向' : opp.amountRange === '10to20' ? '中意向' : '培育中'
-  const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : opp.stage === 'signing' ? '推进合同条款确认与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进项目交付与客户反馈' : '确认是否重新激活商机'
+  const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : ['contacting', 'proposal'].includes(opp.stage) ? '完善需求方案并推动客户确认' : ['negotiation', 'signing'].includes(opp.stage) ? '推进报价谈判与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进交付验收与客户反馈' : '确认是否重新激活商机'
   const productInterest = `${opp.industry.replace(/\s*\/\s*/g, ' · ')}解决方案`
   const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
   const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError ? '••••' : '已加密')
@@ -231,7 +264,7 @@ export default function OpportunityDetail() {
         </div>
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {canEdit && opp.stage !== 'released' && !opp.isFrozen && (
+          {canEdit && !['released', 'closed'].includes(opp.stage) && !opp.isFrozen && (
             <div style={{ position: 'relative' }}>
               <button onClick={() => setShowStageMenu(v => !v)}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #0a6a82, #0e9dbf)', fontSize: 13, fontWeight: 600, color: 'white', cursor: 'pointer', boxShadow: '0 3px 12px rgba(14,157,191,0.35)' }}>
@@ -243,7 +276,7 @@ export default function OpportunityDetail() {
                 <>
                   <div onClick={() => setShowStageMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
                   <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: 'white', borderRadius: 12, boxShadow: '0 8px 30px rgba(0,0,0,0.12)', border: '1px solid #f0f2f5', minWidth: 160, zIndex: 100, overflow: 'hidden' }}>
-                    {(['reporting','signing','signed','delivery'] as const).filter(s => pipelineOrder[s] >= pipelineOrder[opp.stage]).map(s => (
+                    {(['reporting','contacting','proposal','negotiation','signed','delivery','closed'] as const).filter(s => pipelineOrder[s] >= pipelineOrder[opp.stage]).map(s => (
                       <button key={s} onClick={() => { setShowStageMenu(false); if (s !== opp.stage) { if (s === 'signed') setShowSigningModal(true); else updateStage(opp.id, s) } }}
                         style={{ display: 'block', width: '100%', padding: '11px 16px', textAlign: 'left', border: 'none', background: s === opp.stage ? '#f0f0f0' : 'transparent', fontSize: 13, fontWeight: s === opp.stage ? 700 : 500, color: s === opp.stage ? '#111111' : '#374151', cursor: 'pointer' }}>
                         {stageName(s)}{s === opp.stage && ' ✓'}
@@ -276,7 +309,6 @@ export default function OpportunityDetail() {
 
       <section className="sx-detail-summary">
         <div className="sx-summary-main">
-          <div className="sx-account-mark">{initial}</div>
           <div className="sx-account-copy">
             <span className="sx-eyebrow">OPPORTUNITY PROFILE</span>
             <h1>{opp.customerName}</h1>
@@ -293,8 +325,8 @@ export default function OpportunityDetail() {
         <div className={`sx-health-ring ${healthTone}`} style={{ '--score': `${healthScore * 3.6}deg` } as React.CSSProperties}>
           <strong>{healthScore}</strong><span>健康度</span>
         </div>
-        <div className="sx-stage-bar">
-          {pipeline.map((item, index) => {
+        <div className="sx-stage-bar" style={{ gridTemplateColumns: `repeat(${displayPipeline.length}, minmax(0, 1fr))` }}>
+          {displayPipeline.map((item, index) => {
             const state = index < currentPipelineIdx ? 'done' : index === currentPipelineIdx ? 'active' : ''
             const stageDate = item.key === 'reporting' ? opp.reportedAt : item.key === 'signed' && opp.signedDate ? opp.signedDate : state ? opp.updatedAt : ''
             return <div key={item.key} className={state}><i /><b>{item.label}</b><em>{stageDate ? formatDate(stageDate) : '—'}</em></div>
@@ -313,14 +345,7 @@ export default function OpportunityDetail() {
               <div className={`sx-field ${!opp.amountRange ? 'warn' : ''}`}><label>预算</label><strong>{amountLabel(opp.amountRange)}</strong></div>
               <div className="sx-field"><label>需求部门</label><strong>{contact.department || '待补充'}</strong></div>
               <div className="sx-field"><label>商机类型</label><strong>{opp.source === 'channel' ? '渠道商机' : '直客商机'}</strong></div>
-              <div className="sx-field"><label>联系人 · {contact.level}</label><strong className="with-lock"><Lock size={12} />{contactName}</strong></div>
-              <div className="sx-field"><label>联系方式</label><strong>{contact.contactTypes.map(t => t === 'phone' ? '手机' : t === 'wechat' ? '微信' : '邮箱').join(' · ') || '待补充'}</strong></div>
-            </div>
-            <div className="sx-owner-strip">
-              <div><span>销售负责人</span><strong>{users.find(u => u.id === opp.salesOwnerId)?.name ?? opp.salesOwnerName}</strong></div>
-              <div><span>协作人 / SA</span><strong>{opp.saOwnerName || '待分配'}</strong></div>
-              <div><span>首次接触</span><strong>{formatDate(opp.firstContactDate)}</strong></div>
-              <div><span>下一步动作</span><strong>{nextAction}</strong></div>
+              <div className="sx-field sx-contact-field"><div><label>联系人 · {contact.level}</label><strong className="with-lock"><Lock size={12} />{contactName}</strong></div><span className="sx-contact-methods"><i className={contact.contactTypes.includes('wechat') ? 'active' : ''} title="微信"><MessageCircle size={15} /></i><i className={contact.contactTypes.includes('phone') ? 'active' : ''} title="手机号"><Phone size={15} /></i><i className={contact.contactTypes.includes('email') ? 'active' : ''} title="邮箱"><Mail size={15} /></i></span></div>
             </div>
             {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div></div>}
           </article>
@@ -338,7 +363,7 @@ export default function OpportunityDetail() {
           </article>
 
           <article className="sx-panel">
-            <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && opp.stage !== 'released' && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupBound ? 'bound' : ''} onClick={() => setGroupBound(value => !value)}><Users size={13} />{groupBound ? '群巡检已开启' : '绑定商机群'}</button></div></header>
+            <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && !['released', 'closed'].includes(opp.stage) && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupSaved && groupConfig.enabled ? 'bound' : ''} onClick={() => setShowGroupInspection(true)}><Users size={13} />商机群巡检{groupSaved ? <em>{groupConfig.enabled ? `已开启 · ${groupConfig.groups.length} 个群` : '已暂停'}</em> : null}</button></div></header>
             <div className="sx-progress-axis">
               {timelineItems.map((item, index) => <div key={item.id} className={`sx-progress-item ${item.type}`}><time>{item.time}</time><i>{index < timelineItems.length - 1 && <span />}</i><div><header><strong>{item.title}</strong><em>{item.label}</em></header><p>{item.body}</p></div></div>)}
             </div>
@@ -354,7 +379,7 @@ export default function OpportunityDetail() {
               const label = released ? '已释放' : expired ? '保护已到期' : urgent ? '即将到期' : opp.lockedPermanently ? '永久锁定' : '保护中'
               return <div className="sx-protection-card" style={{ '--protect': color } as React.CSSProperties}><div className="sx-protect-ring"><Donut pct={opp.lockedPermanently ? 1 : Math.max(0, Math.min(1, days / 30))} color={color} size={88} /><span><strong>{opp.lockedPermanently ? '∞' : released || expired ? '—' : days}</strong>{!opp.lockedPermanently && !released && !expired && <small>天</small>}</span></div><div><h3>{label}</h3><p>{opp.lockedPermanently ? '永久保护，无需续期' : `保护到期 ${formatDate(opp.releaseAt)}`}</p><b>{released ? '保护已终止' : urgent ? `仅剩 ${Math.max(days, 0)} 天` : '保护有效'}</b></div></div>
             })()}
-            <div className="sx-protection-meta"><div><span>保护负责人</span><strong>{opp.salesOwnerName}</strong></div><div><span>报备时间</span><strong>{formatDate(opp.reportedAt)}</strong></div><div><span>来源类型</span><strong>{opp.source === 'channel' ? '渠道伙伴' : '销售自报'}</strong></div><div><span>渠道经理</span><strong>{opp.channelManagerName || '—'}</strong></div></div>
+            <div className="sx-protection-meta"><div><span>销售负责人</span><strong>{opp.salesOwnerName}</strong></div><div><span>报备时间</span><strong>{formatDate(opp.reportedAt)}</strong></div><div><span>来源类型</span><strong>{opp.source === 'channel' ? '渠道伙伴' : '销售自报'}</strong></div><div><span>渠道经理</span><strong>{opp.channelManagerName || '—'}</strong></div></div>
           </article>
 
           <article className="sx-panel sx-ai-panel">
@@ -362,11 +387,32 @@ export default function OpportunityDetail() {
             <section className="hero"><h3>商机解读</h3><p>{opp.customerName}当前处于{stageName(opp.stage)}阶段，{intentLevel}，健康度 {healthScore} 分。</p></section>
             <section><h3>赢单机会</h3><ul><li>{productInterest}与客户当前需求场景匹配。</li><li>预算口径为{amountLabel(opp.amountRange)}。</li></ul></section>
             <section className="risk"><h3>风险提醒</h3><ul><li>{riskText}</li></ul></section>
-            <section><h3>下一步行动</h3><ul><li>{nextAction}</li><li>{groupBound ? '持续关注商机群巡检报告。' : '建议绑定商机群，自动沉淀客户上下文。'}</li></ul></section>
+            <section><h3>下一步行动</h3><ul><li>{nextAction}</li><li>{groupSaved ? '持续关注商机群巡检报告。' : '建议配置商机群巡检，自动沉淀客户上下文。'}</li></ul></section>
             <button className="sx-script-btn" onClick={() => navigate(`/?prompt=${encodeURIComponent(`帮我为${opp.customerName}生成跟进话术`)}`)}><Sparkles size={14} />生成跟进话术</button>
           </article>
         </aside>
       </section>
+
+      {showGroupInspection && <div className="sx-inspection-backdrop" onMouseDown={event => event.target === event.currentTarget && setShowGroupInspection(false)}>
+        <section className="sx-inspection-modal">
+          <header><div><span className={groupSaved && groupConfig.enabled ? 'active' : groupSaved ? 'paused' : ''}>{groupSaved ? groupConfig.enabled ? '巡检已开启' : '巡检已暂停' : '巡检未配置'}</span><h2>商机群巡检配置</h2><p>自动读取已授权商机群的新消息，提取进展与风险，并生成需要销售确认的维护报告。</p></div><button onClick={() => setShowGroupInspection(false)} aria-label="关闭"><X size={17} /></button></header>
+          <div className="sx-inspection-summary"><div><span>关联商机</span><strong>{opp.customerName}</strong></div><div><span>当前状态</span><strong>{groupSaved ? groupConfig.enabled ? `正常巡检 · ${groupConfig.groups.length} 个群` : `已暂停 · ${groupConfig.groups.length} 个群` : '待配置'}</strong></div></div>
+          <div className="sx-group-section">
+            <div className="sx-group-head"><div><strong>绑定商机群 <b>*</b></strong><p>支持京 ME、飞书、企微、钉钉，可同时绑定多个群聊</p></div><button onClick={() => setGroupConfig(config => ({ ...config, groups: [...config.groups, { channel: '飞书', groupId: '', groupName: '' }] }))}><Plus size={13} />添加商机群</button></div>
+            <div className="sx-group-labels"><span>群渠道来源</span><span>群 ID</span><span>群名称</span><span>操作</span></div>
+            <div className="sx-group-list">{groupConfig.groups.map((group, index) => <div className="sx-group-row" key={index}><select value={group.channel} onChange={event => setGroupConfig(config => ({ ...config, groups: config.groups.map((item, itemIndex) => itemIndex === index ? { ...item, channel: event.target.value } : item) }))}>{['京 ME','飞书','企微','钉钉'].map(channel => <option key={channel}>{channel}</option>)}</select><input value={group.groupId} placeholder="请输入群 ID" onChange={event => setGroupConfig(config => ({ ...config, groups: config.groups.map((item, itemIndex) => itemIndex === index ? { ...item, groupId: event.target.value } : item) }))} /><input value={group.groupName} placeholder="请输入群名称" onChange={event => setGroupConfig(config => ({ ...config, groups: config.groups.map((item, itemIndex) => itemIndex === index ? { ...item, groupName: event.target.value } : item) }))} /><button disabled={groupConfig.groups.length === 1} onClick={() => setGroupConfig(config => ({ ...config, groups: config.groups.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={13} />移除</button></div>)}</div>
+          </div>
+          <div className="sx-inspection-grid">
+            <label><span>配置状态</span><select value={groupConfig.enabled ? 'enabled' : 'paused'} onChange={event => setGroupConfig(config => ({ ...config, enabled: event.target.value === 'enabled' }))}><option value="enabled">开启巡检</option><option value="paused">暂停巡检</option></select><em>暂停后保留已有配置和历史报告</em></label>
+            <label><span>巡检频率</span><select value={groupConfig.frequency} onChange={event => setGroupConfig(config => ({ ...config, frequency: event.target.value }))}>{['每日','工作日','每周一'].map(item => <option key={item}>{item}</option>)}</select><em>按所选周期自动执行</em></label>
+            <label><span>巡检时间</span><input type="time" value={groupConfig.time} onChange={event => setGroupConfig(config => ({ ...config, time: event.target.value }))} /><em>采用当前账号所在时区</em></label>
+            <label><span>消息范围</span><select value={groupConfig.range} onChange={event => setGroupConfig(config => ({ ...config, range: event.target.value }))}>{['最近 24 小时消息','上次巡检后的新消息','最近 7 天消息'].map(item => <option key={item}>{item}</option>)}</select><em>用于生成本次进展摘要</em></label>
+            <label className="wide"><span>巡检输出</span><select value={groupConfig.output} onChange={event => setGroupConfig(config => ({ ...config, output: event.target.value }))}>{['生成商机维护报告','仅生成群消息摘要','生成报告并提醒负责人'].map(item => <option key={item}>{item}</option>)}</select><em>所有字段更新仍需销售确认后生效</em></label>
+          </div>
+          {groupError && <div className="sx-inspection-error">{groupError}</div>}
+          <footer><button className="secondary" onClick={() => setShowGroupInspection(false)}>取消</button><button className="primary" onClick={saveGroupInspection}>保存配置</button></footer>
+        </section>
+      </div>}
 
       {previewEvidence && (
         <div
