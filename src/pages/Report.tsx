@@ -305,12 +305,12 @@ export default function Report() {
           客户「{form.customerName}」已锁定 30 天
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <button onClick={() => navigate('/my')} style={{
+          <button onClick={() => navigate('/opportunities')} style={{
             background: 'linear-gradient(135deg, #0a6a82, #0e9dbf)', color: 'white',
             border: 'none', padding: '12px 24px', borderRadius: 14,
             fontSize: 14, fontWeight: 600, cursor: 'pointer',
             boxShadow: '0 4px 12px rgba(14,120,160,0.3)',
-          }}>查看我的商机</button>
+          }}>查看商机池</button>
           <button onClick={() => { setSuccess(false); setStep(0); setForm(f => ({ ...f, customerName: '', companyName: '', industry: '' as IndustryType | '' })) }}
             style={{
               background: 'rgba(0,0,0,0.08)', color: '#111111',

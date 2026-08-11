@@ -164,7 +164,7 @@ export default function Query() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {isMyOpp && (
-                      <span style={{ fontSize: 11, fontWeight: 600, background: 'rgba(14,157,191,0.1)', color: '#0e7a9a', padding: '3px 9px', borderRadius: 8 }}>我的商机</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, background: 'rgba(14,157,191,0.1)', color: '#0e7a9a', padding: '3px 9px', borderRadius: 8 }}>本人负责</span>
                     )}
                     {!isChannel && (
                       <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>

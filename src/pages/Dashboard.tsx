@@ -406,7 +406,7 @@ export default function Dashboard() {
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 1 }}>点击查看详情</div>
               </div>
               <button
-                onClick={() => navigate('/my')}
+                onClick={() => navigate('/opportunities')}
                 style={{
                   fontSize: 13, color: '#111111', fontWeight: 600,
                   background: 'rgba(0,0,0,0.08)', border: 'none',
@@ -433,7 +433,7 @@ export default function Dashboard() {
             <div style={{ ...glass, borderRadius: 20, padding: '20px 22px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#111111' }}>近期动态</div>
-                <button onClick={() => navigate('/my')} style={{ fontSize: 12, color: '#111111', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>查看全部</button>
+                <button onClick={() => navigate('/opportunities')} style={{ fontSize: 12, color: '#111111', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>查看全部</button>
               </div>
               {myOpps.slice(0, 5).map((opp, i) => {
                 const COLORS = ['#111111','#f4a261','#2ec4b6','#ff6b6b']

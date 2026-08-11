@@ -3,7 +3,6 @@ import Layout from './components/layout/Layout'
 import Dashboard from './pages/Dashboard'
 import Query from './pages/Query'
 import Report from './pages/Report'
-import MyOpportunities from './pages/MyOpportunities'
 import Admin from './pages/Admin'
 import OpportunityDetail from './pages/OpportunityDetail'
 import LogsPage from './pages/Logs'
@@ -50,7 +49,6 @@ export default function App() {
           <Route path="/query" element={<Query />} />
           <Route path="/report" element={<Report />} />
           <Route path="/opportunities" element={<OpportunityPool />} />
-          <Route path="/my" element={<MyOpportunities />} />
           <Route path="/sales-partner" element={<Navigate to="/" replace />} />
           <Route path="/performance" element={<Performance />} />
           <Route path="/connectors" element={<Connectors />} />

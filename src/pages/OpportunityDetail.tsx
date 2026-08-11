@@ -129,8 +129,8 @@ export default function OpportunityDetail() {
       <div style={{ textAlign: 'center', padding: '80px 0', color: '#9ca3af' }}>
         <Shield size={40} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
         <div style={{ fontSize: 15 }}>商机不存在或已被删除</div>
-        <button onClick={() => navigate('/my')} style={{ marginTop: 16, padding: '8px 20px', borderRadius: 10, border: 'none', background: '#111111', color: 'white', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-          返回我的商机
+        <button onClick={() => navigate('/opportunities')} style={{ marginTop: 16, padding: '8px 20px', borderRadius: 10, border: 'none', background: '#111111', color: 'white', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          返回商机池
         </button>
       </div>
     )
@@ -234,14 +234,14 @@ export default function OpportunityDetail() {
   const confirmAdminAction = () => {
     if (adminAction === 'delete') {
       deleteOpportunity(opp.id)
-      navigate('/my')
+      navigate('/opportunities')
       return
     }
     if (!adminReason.trim()) return
     if (adminAction === 'release') releaseOpportunity(opp.id, adminReason)
     else if (adminAction === 'freeze') freezeOpportunity(opp.id, adminReason)
     else if (adminAction === 'rejectEvidence') rejectEvidence(opp.id, adminReason)
-    navigate('/my')
+    navigate('/opportunities')
   }
 
   // Donut SVG helper
@@ -299,10 +299,10 @@ export default function OpportunityDetail() {
       {/* ── Top nav bar ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/my')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, border: '1.5px solid #e8eaed', background: 'white', cursor: 'pointer', color: '#555', flexShrink: 0 }}>
+          <button onClick={() => navigate('/opportunities')} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, border: '1.5px solid #e8eaed', background: 'white', cursor: 'pointer', color: '#555', flexShrink: 0 }}>
             <ChevronLeft size={16} />
           </button>
-          <div style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>我的商机 / 商机详情</div>
+          <div style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>商机池 / 商机详情</div>
         </div>
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -405,7 +405,7 @@ export default function OpportunityDetail() {
 
         <aside className="sx-detail-side">
           <article className="sx-panel sx-protection-panel">
-            <header className="sx-panel-head"><div><span>PROTECTION</span><h2>商机保护状态</h2></div>{canEdit && !opp.lockedPermanently && days <= 7 && isOwner && opp.stage !== 'released' && <button className="sx-renew" onClick={() => { requestRenewal(opp.id); navigate('/my') }}>申请续期</button>}</header>
+            <header className="sx-panel-head"><div><span>PROTECTION</span><h2>商机保护状态</h2></div>{canEdit && !opp.lockedPermanently && days <= 7 && isOwner && opp.stage !== 'released' && <button className="sx-renew" onClick={() => { requestRenewal(opp.id); navigate('/opportunities') }}>申请续期</button>}</header>
             {(() => {
               const released = opp.stage === 'released', expired = !opp.lockedPermanently && !released && days <= 0, urgent = !opp.lockedPermanently && !released && days <= 7
               const color = released ? '#8b98a8' : expired || urgent ? '#d99212' : opp.lockedPermanently ? '#1657c8' : '#00a36c'
@@ -714,7 +714,7 @@ export default function OpportunityDetail() {
                     </button>
                   )}
                   {opp.isFrozen ? (
-                    <button onClick={() => { approveEvidence(opp.id); setShowAdminModal(false); navigate('/my') }}
+                    <button onClick={() => { approveEvidence(opp.id); setShowAdminModal(false); navigate('/opportunities') }}
                       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f0fdf4'; (e.currentTarget as HTMLElement).style.borderColor = '#6ee7b7' }}
                       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'white'; (e.currentTarget as HTMLElement).style.borderColor = '#e5e5e5' }}
                       style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 12, border: '1.5px solid #e5e5e5', background: 'white', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}>
