@@ -238,7 +238,11 @@ export default function OpportunityDetail() {
   const healthTone = healthScore >= 80 ? 'healthy' : healthScore >= 65 ? 'watch' : healthScore >= 50 ? 'risk' : 'danger'
   const intentLevel = opp.amountRange === 'above50' || opp.amountRange === '20to50' ? '高意向' : opp.amountRange === '10to20' ? '中意向' : '培育中'
   const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : ['contacting', 'proposal'].includes(opp.stage) ? '完善需求方案并推动客户确认' : ['negotiation', 'signing'].includes(opp.stage) ? '推进报价谈判与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进交付验收与客户反馈' : '确认是否重新激活商机'
-  const productInterest = `${opp.industry.replace(/\s*\/\s*/g, ' · ')}解决方案`
+  const productInterests = ['声访 AI 调研数字员工', '外呼 AI 电销数字员工']
+  const productInterest = productInterests.join('、')
+  const demandDescription = opp.requirementDescription?.trim() || ''
+  const demandDescriptionChars = Array.from(demandDescription)
+  const demandDescriptionDisplay = demandDescriptionChars.length > 120 ? `${demandDescriptionChars.slice(0, 120).join('')}…` : demandDescription
   const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
   const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError || contact.encryptedName ? '••••' : '待补充')
   const salesTimelineItems = progressReports.length
@@ -341,13 +345,13 @@ export default function OpportunityDetail() {
           <article className="sx-panel">
             <header className="sx-panel-head"><div><span>核心信息</span><h2>商机字段</h2></div><small>AI 抽取 + 人工确认</small></header>
             <div className="sx-field-grid">
-              <div className="sx-field"><label>商机名称</label><strong>{opp.customerName}</strong><small>{opp.companyName || '公司全称待补充'}</small></div>
-              <div className="sx-field"><label>需求类型</label><strong>{productInterest}</strong></div>
-              <div className="sx-field wide"><label>需求场景</label><strong>{opp.requirementDescription || '待补充'}</strong></div>
+              <div className={`sx-field ${!opp.customerName || !opp.companyName ? 'warn' : ''}`}><label>商机名称</label><strong>{opp.customerName || '待补充'}</strong><small>{opp.companyName || '公司全称待补充'}</small></div>
+              <div className="sx-field"><label>产品兴趣</label><strong className="sx-product-tags">{productInterests.map(item => <span key={item}>{item}</span>)}</strong></div>
               <div className={`sx-field ${!opp.amountRange ? 'warn' : ''}`}><label>预算</label><strong>{amountLabel(opp.amountRange)}</strong></div>
-              <div className="sx-field"><label>需求部门</label><strong>{contact.department || '待补充'}</strong></div>
+              <div className={`sx-field ${!contact.department ? 'warn' : ''}`}><label>需求部门</label><strong>{contact.department || '待补充'}</strong></div>
               <div className="sx-field"><label>商机类型</label><strong>{opp.source === 'channel' ? '渠道商机' : '直客商机'}</strong></div>
-              <div className="sx-field sx-contact-field"><div><label>联系人 · {contact.level}</label><strong className="with-lock"><Lock size={12} />{contactName}{canViewContact && contact.encryptedName && !decryptedContact && <button className="sx-contact-eye" onClick={() => setShowContactConfirm(true)} disabled={contactLoading} aria-label="查看联系人" title="解密查看联系人"><Eye size={14} /></button>}</strong>{decryptedContact?.contact && <small className="sx-contact-value">{decryptedContact.contact}</small>}{contactError && <small className="sx-contact-error">{contactError}</small>}</div><span className="sx-contact-methods"><i className={contact.contactTypes.includes('wechat') ? 'active' : ''} title="微信"><MessageCircle size={15} /></i><i className={contact.contactTypes.includes('phone') ? 'active' : ''} title="手机号"><Phone size={15} /></i><i className={contact.contactTypes.includes('email') ? 'active' : ''} title="邮箱"><Mail size={15} /></i></span></div>
+              <div className={`sx-field sx-contact-field ${!contact.encryptedName ? 'warn' : ''}`}><div><label>联系人 · {contact.level || '层级待补充'}</label><strong className="with-lock"><Lock size={12} />{contactName}{canViewContact && contact.encryptedName && !decryptedContact && <button className="sx-contact-eye" onClick={() => setShowContactConfirm(true)} disabled={contactLoading} aria-label="查看联系人" title="解密查看联系人"><Eye size={14} /></button>}</strong>{decryptedContact?.contact && <small className="sx-contact-value">{decryptedContact.contact}</small>}{contactError && <small className="sx-contact-error">{contactError}</small>}</div><span className="sx-contact-methods"><i className={contact.contactTypes.includes('wechat') ? 'active' : ''} title="微信"><MessageCircle size={15} /></i><i className={contact.contactTypes.includes('phone') ? 'active' : ''} title="手机号"><Phone size={15} /></i><i className={contact.contactTypes.includes('email') ? 'active' : ''} title="邮箱"><Mail size={15} /></i></span></div>
+              <div className={`sx-field wide sx-demand-field ${!demandDescription ? 'warn' : ''}`}><label>需求场景</label><strong>{demandDescriptionDisplay || '待补充，最多支持 120 字'}</strong></div>
             </div>
             {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div></div>}
           </article>
