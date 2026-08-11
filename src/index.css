@@ -249,6 +249,7 @@ body.ai-partner-open { overflow: hidden; }
 .pool-reference-timeline span { height:4px; border-radius:999px; background:rgba(255,255,255,.58); }.pool-reference-timeline span.on { background:rgba(10,58,74,.68); }
 .pool-reference-card .pool-reference-action { min-height:35px; display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; }
 .pool-reference-foot { margin-top:12px; }.pool-reference-tag.health.healthy { color:#23520e; background:#d9f4d0; }.pool-reference-tag.health.watch { color:#17445d; background:#dceff8; }.pool-reference-tag.health.risk { color:#684d07; background:#fff0b8; }
+.pool-reference-foot .pool-reference-tag { min-height:29px; padding:0 11px; border-radius:7px; font-size:13px; font-weight:750; }
 @media (min-width: 768px) {
   .mobile-only  { display: none !important; }
 }

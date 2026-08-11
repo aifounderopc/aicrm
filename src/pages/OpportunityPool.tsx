@@ -155,9 +155,9 @@ export default function OpportunityPool() {
         {paged.map(item => {
           const health = healthScore(item), stageIndex = Math.max(0, stageOrder.findIndex(stage => stage === item.stage || (stage === 'negotiation' && item.stage === 'signing')))
           const conflict = duplicateIds.has(item.id)
-          const protection = conflict ? '疑似撞单' : item.stage === 'released' ? '已释放' : item.lockedPermanently ? '持续保护' : daysUntil(item.releaseAt) > 0 ? '保护中' : '保护过期'
+          const cardStage = item.stage === 'released' ? '初接触' : stageName(item.stage)
           return <article className={`pool-opportunity-card pool-reference-card stage-${item.stage} ${conflict ? 'possible-conflict' : ''}`} key={item.id} onClick={() => navigate(`/opportunity/${item.id}`)}>
-            <header className="pool-reference-top"><span className="pool-reference-tag stage">{stageName(item.stage)}</span><span className={`pool-reference-tag protection ${conflict ? 'conflict' : item.stage === 'released' ? 'muted' : ''}`}>{protection}</span></header>
+            <header className="pool-reference-top"><span className="pool-reference-tag stage">{cardStage}</span></header>
             <h3>{item.customerName}</h3>
             <p className="pool-reference-meta">{item.industry} · JM 声访</p>
             <div className="pool-reference-timeline">{stageOrder.map((stage, index) => <span key={stage} className={index <= stageIndex ? 'on' : ''}/>)}</div>
