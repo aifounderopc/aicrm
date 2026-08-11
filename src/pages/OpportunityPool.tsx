@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock3, LayoutGrid, List, Search, Sparkles, TrendingUp } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock3, LayoutGrid, List, Lock, Search, Shield, Sparkles, TrendingUp, X } from 'lucide-react'
 import { useStore } from '../store'
 import { daysUntil, formatDate, formatSignedAmount, isAdminRole, stageName } from '../utils'
 import type { Opportunity } from '../types'
 
 type PoolFilter = 'all' | 'high' | 'conflict' | 'incomplete' | 'expiring'
 type PoolView = 'card' | 'list'
+type CollisionSearchResult = { active: Opportunity[]; released: Opportunity[] }
 
 const PAGE_SIZE = 20
 const stageOrder = ['reporting', 'contacting', 'proposal', 'negotiation', 'signed', 'delivery'] as const
@@ -62,6 +63,11 @@ export default function OpportunityPool() {
   const [view, setView] = useState<PoolView>('card')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
+  const [showCollisionCheck, setShowCollisionCheck] = useState(false)
+  const [collisionName, setCollisionName] = useState('')
+  const [collisionCompany, setCollisionCompany] = useState('')
+  const [collisionIndustry, setCollisionIndustry] = useState('')
+  const [collisionSearchResult, setCollisionSearchResult] = useState<CollisionSearchResult | null>(null)
 
   const visible = useMemo(() => {
     if (isAdminRole(currentUser.role)) return opportunities
@@ -123,12 +129,45 @@ export default function OpportunityPool() {
     incomplete: visible.filter(item => item.stage === 'reporting' || isIncomplete(item)).length,
     expiring: visible.filter(isExpiring).length,
   }
+  const runCollisionSearch = () => {
+    const name = collisionName.trim().toLowerCase()
+    const company = collisionCompany.trim().toLowerCase()
+    if (!name) return
+    const now = Date.now()
+    const matched = visible.filter(item => {
+      const matchesName = item.customerName.toLowerCase().includes(name) || name.includes(item.customerName.toLowerCase())
+      const matchesCompany = !company || item.companyName?.toLowerCase().includes(company) || company.includes(item.companyName?.toLowerCase() || '__none__')
+      const matchesIndustry = !collisionIndustry || item.industry === collisionIndustry
+      return matchesName && matchesCompany && matchesIndustry
+    })
+    const isReleased = (item: Opportunity) => ['released','closed'].includes(item.stage) || (!item.lockedPermanently && new Date(item.releaseAt).getTime() <= now)
+    setCollisionSearchResult({ active: matched.filter(item => !isReleased(item)), released: matched.filter(isReleased) })
+  }
+  const resetCollisionSearch = () => { setCollisionName(''); setCollisionCompany(''); setCollisionIndustry(''); setCollisionSearchResult(null) }
 
   return <main className="opportunity-pool-page">
     <header className="pool-page-head">
       <div><h1>商机池</h1><p>集中查看全量商机状态，识别高意向、撞单风险与即将释放的机会。</p></div>
-      <button className="pool-ai-report" onClick={() => navigate('/report')}><Bot size={17}/><span>AI 报备</span><ArrowRight size={15}/></button>
+      <div className="pool-head-actions"><button className="pool-ai-report" onClick={() => navigate('/report')}><Bot size={17}/><span>AI 报备</span><ArrowRight size={15}/></button><button className="pool-collision-entry" onClick={() => setShowCollisionCheck(true)}><Shield size={16}/><span>商机撞单检测</span></button></div>
     </header>
+
+    {showCollisionCheck && <div className="pool-collision-backdrop" onMouseDown={event => event.target === event.currentTarget && setShowCollisionCheck(false)}>
+      <section className="pool-collision-modal" role="dialog" aria-modal="true" aria-label="商机撞单检测">
+        <header><div><span><Shield size={14}/>COLLISION CHECK</span><h2>商机撞单检测</h2><p>输入客户信息，查询是否存在保护中、相似或已释放的商机。</p></div><button aria-label="关闭" onClick={() => setShowCollisionCheck(false)}><X size={17}/></button></header>
+        <div className="pool-collision-fields">
+          <label className="name"><span>客户名称 *</span><div><Search size={15}/><input autoFocus value={collisionName} onChange={event => { setCollisionName(event.target.value); setCollisionSearchResult(null) }} onKeyDown={event => event.key === 'Enter' && runCollisionSearch()} placeholder="输入客户或品牌名称"/></div></label>
+          <label><span>公司全称</span><input value={collisionCompany} onChange={event => { setCollisionCompany(event.target.value); setCollisionSearchResult(null) }} placeholder="选填，用于区分主体"/></label>
+          <label><span>所属行业</span><select value={collisionIndustry} onChange={event => { setCollisionIndustry(event.target.value); setCollisionSearchResult(null) }}><option value="">全部行业</option>{[...new Set(visible.map(item => item.industry))].sort().map(item => <option key={item}>{item}</option>)}</select></label>
+          <button className="search" onClick={runCollisionSearch} disabled={!collisionName.trim()}><Search size={15}/>开始检测</button>
+        </div>
+
+        {!collisionSearchResult ? <div className="pool-collision-guide"><div><CheckCircle2 size={16}/><span><strong>可报备</strong>未发现保护中商机，可进入 AI 报备</span></div><div><Lock size={16}/><span><strong>存在撞单</strong>展示商机阶段、保护期限和负责人</span></div></div> : <div className="pool-collision-results">
+          {collisionSearchResult.active.length === 0 ? <div className="pool-collision-clear"><CheckCircle2 size={28}/><h3>未发现保护中的重复商机</h3><p>客户“{collisionName}”当前可接触。正式报备时服务端仍会再次检测。</p><button onClick={() => navigate(`/report?name=${encodeURIComponent(collisionName)}`)}><Bot size={15}/>进入 AI 报备</button></div> : <div className="pool-collision-active"><header><span><AlertTriangle size={14}/>发现 {collisionSearchResult.active.length} 条保护中商机</span><em>暂不可重复报备</em></header>{collisionSearchResult.active.map(item => <article key={item.id}><div className="identity"><i>{item.customerName.slice(0,1)}</i><span><strong>{item.customerName}</strong><small>{item.companyName || item.industry}</small></span></div><div><small>商机阶段</small><strong>{stageName(item.stage)}</strong></div><div><small>保护状态</small><strong>{item.lockedPermanently ? '持续保护' : `剩余 ${Math.max(0,daysUntil(item.releaseAt))} 天`}</strong></div>{currentUser.role !== 'channel' && <div><small>销售负责人</small><strong>{item.salesOwnerName}</strong></div>}</article>)}</div>}
+          {collisionSearchResult.released.length > 0 && <div className="pool-collision-released"><header><span>已释放记录</span><em>{collisionSearchResult.released.length} 条</em></header>{collisionSearchResult.released.map(item => <div key={item.id}><span><strong>{item.customerName}</strong><small>{item.industry}</small></span><em>{item.releasedAt ? `${formatDate(item.releasedAt)} 释放` : '保护期已结束'}</em></div>)}</div>}
+        </div>}
+        <footer><button onClick={resetCollisionSearch}>清空条件</button><button onClick={() => setShowCollisionCheck(false)}>完成</button></footer>
+      </section>
+    </div>}
 
     <section className="pool-metrics" aria-label="商机概览">
       {metrics.map(({ label, value, note, icon: Icon, tone, target }) => <button key={label} className={`pool-metric ${tone} ${target && filter === target ? 'selected' : ''}`} onClick={() => target && changeFilter(target)} disabled={!target}>
