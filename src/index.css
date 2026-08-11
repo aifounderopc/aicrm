@@ -225,6 +225,30 @@ body.ai-partner-open { overflow: hidden; }
 
 @media (max-width:1100px) { .pool-metrics { grid-template-columns:repeat(3,1fr); }.pool-insights { grid-template-columns:1fr; }.pool-card-grid { grid-template-columns:repeat(2,1fr); }.pool-board:has(.pool-list-wrap) { overflow-x:auto; } }
 @media (max-width:767px) { .opportunity-pool-page { padding:4px 14px 30px; }.pool-page-head { align-items:flex-start; flex-direction:column; }.pool-page-head h1 { font-size:25px; }.pool-ai-report { align-self:stretch; justify-content:center; }.pool-metrics { grid-template-columns:1fr 1fr; }.pool-metric:last-child { grid-column:1 / -1; }.pool-insight-card { min-height:245px; padding:16px; }.pool-stage-chart { gap:5px; }.pool-stage-track > span { width:60%; }.pool-signing-content { grid-template-columns:120px 1fr; gap:12px; }.pool-donut { width:112px; height:112px; }.pool-donut::before { width:74px; height:74px; }.pool-donut strong { font-size:20px; }.pool-toolbar { align-items:stretch; flex-direction:column; }.pool-filters { overflow-x:auto; }.pool-filters button { flex:0 0 auto; }.pool-tools > label { width:auto; flex:1; }.pool-card-grid { grid-template-columns:1fr; padding:11px; }.pool-pagination { align-items:flex-start; flex-direction:column; } }
+
+/* 商机池卡片：还原 Scale X 原版阶段渐变卡片 */
+.pool-opportunity-card.pool-reference-card { min-height:190px; padding:16px 18px 18px; border:1px solid rgba(255,255,255,.62); border-radius:22px; background:linear-gradient(145deg,#ddf3fa 0%,#b8e8f7 100%); box-shadow:0 2px 14px rgba(14,120,160,.18); }
+.pool-opportunity-card.pool-reference-card::before { display:none; }
+.pool-opportunity-card.pool-reference-card.stage-reporting,
+.pool-opportunity-card.pool-reference-card.stage-contacting { background:linear-gradient(145deg,#ddf3fa 0%,#b8e8f7 100%); box-shadow:0 2px 14px rgba(14,120,160,.18); }
+.pool-opportunity-card.pool-reference-card.stage-proposal { background:linear-gradient(145deg,#fef4c0 0%,#fce878 100%); box-shadow:0 2px 14px rgba(160,120,0,.18); }
+.pool-opportunity-card.pool-reference-card.stage-negotiation,
+.pool-opportunity-card.pool-reference-card.stage-signing,
+.pool-opportunity-card.pool-reference-card.stage-signed,
+.pool-opportunity-card.pool-reference-card.stage-delivery { background:linear-gradient(145deg,#c8f5e4 0%,#96eacb 100%); box-shadow:0 2px 14px rgba(10,120,80,.18); }
+.pool-opportunity-card.pool-reference-card.stage-released,
+.pool-opportunity-card.pool-reference-card.stage-closed { background:linear-gradient(145deg,#f3f4f6 0%,#e5e7eb 100%); box-shadow:0 2px 14px rgba(0,0,0,.06); }
+.pool-opportunity-card.pool-reference-card.possible-conflict { background:linear-gradient(145deg,#fff0f3 0%,#f8cfd6 100%); box-shadow:0 2px 14px rgba(205,94,108,.13); }
+.pool-reference-top,.pool-reference-foot { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.pool-reference-tag { min-height:24px; display:inline-flex; align-items:center; padding:0 8px; border-radius:6px; color:#17445d; background:#dceff8; font-size:12px; font-weight:700; line-height:1; white-space:nowrap; }
+.pool-reference-tag.protection { color:#23520e; background:#d9f4d0; }.pool-reference-tag.protection.conflict { color:#684d07; background:#fff0b8; }.pool-reference-tag.protection.muted,.pool-reference-tag.owner { color:#57616d; background:#edf0f3; }
+.pool-reference-card > h3 { margin:8px 0 4px; overflow:hidden; color:#0a3a4a; font-size:17px; line-height:1.25; white-space:nowrap; text-overflow:ellipsis; }
+.pool-reference-card > p { margin:0; color:rgba(10,58,74,.72); font-size:12px; line-height:1.45; }
+.pool-reference-card .pool-reference-meta { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.pool-reference-timeline { display:grid; grid-template-columns:repeat(6,1fr); gap:3px; margin:16px 0 10px; }
+.pool-reference-timeline span { height:4px; border-radius:999px; background:rgba(255,255,255,.58); }.pool-reference-timeline span.on { background:rgba(10,58,74,.68); }
+.pool-reference-card .pool-reference-action { min-height:35px; display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; }
+.pool-reference-foot { margin-top:12px; }.pool-reference-tag.health.healthy { color:#23520e; background:#d9f4d0; }.pool-reference-tag.health.watch { color:#17445d; background:#dceff8; }.pool-reference-tag.health.risk { color:#684d07; background:#fff0b8; }
 @media (min-width: 768px) {
   .mobile-only  { display: none !important; }
 }

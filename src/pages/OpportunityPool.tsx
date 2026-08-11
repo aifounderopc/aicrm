@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock3, LayoutGrid, List, Search, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock3, LayoutGrid, List, Search, Sparkles, TrendingUp } from 'lucide-react'
 import { useStore } from '../store'
-import { amountLabel, daysUntil, formatDate, formatSignedAmount, isAdminRole, stageName } from '../utils'
+import { daysUntil, formatDate, formatSignedAmount, isAdminRole, stageName } from '../utils'
 import type { Opportunity } from '../types'
 
 type PoolFilter = 'all' | 'high' | 'conflict' | 'incomplete' | 'expiring'
@@ -154,13 +154,15 @@ export default function OpportunityPool() {
       {paged.length === 0 ? <div className="pool-empty"><Search size={28}/><strong>没有符合条件的商机</strong><span>调整筛选条件或搜索关键词后再试</span></div> : view === 'card' ? <div className="pool-card-grid">
         {paged.map(item => {
           const health = healthScore(item), stageIndex = Math.max(0, stageOrder.findIndex(stage => stage === item.stage || (stage === 'negotiation' && item.stage === 'signing')))
-          return <article className={`pool-opportunity-card stage-${item.stage}`} key={item.id} onClick={() => navigate(`/opportunity/${item.id}`)}>
-            <header><div className="pool-card-tags"><span className="stage-tag">{stageName(item.stage)}</span>{duplicateIds.has(item.id) && <span className="risk-tag">疑似撞单</span>}{isIncomplete(item) && <span className="warn-tag">待补全</span>}</div><span className={`pool-health ${health >= 80 ? 'healthy' : health >= 65 ? 'normal' : 'risk'}`}>{health}</span></header>
-            <div className="pool-card-title"><h3>{item.customerName}</h3><p>{item.companyName || item.industry}</p></div>
-            <div className="pool-card-meta"><span><small>产品兴趣</small><strong>JM 声访</strong></span><span><small>预计金额</small><strong>{item.signedAmount ? `${formatSignedAmount(item.signedAmount)} 万元` : amountLabel(item.amountRange)}</strong></span></div>
-            <div className="pool-mini-stage">{stageOrder.map((stage, index) => <span key={stage} className={index < stageIndex ? 'passed' : index === stageIndex ? 'current' : ''}><i/>{index < stageOrder.length - 1 && <b/>}</span>)}</div>
-            <div className="pool-next-action"><small>下一步推进建议</small><p>{nextAction(item)}</p></div>
-            <footer><span><ShieldCheck size={14}/>{protectionText(item)}</span><strong>{item.salesOwnerName}<ArrowRight size={14}/></strong></footer>
+          const conflict = duplicateIds.has(item.id)
+          const protection = conflict ? '疑似撞单' : item.stage === 'released' ? '已释放' : item.lockedPermanently ? '持续保护' : daysUntil(item.releaseAt) > 0 ? '保护中' : '保护过期'
+          return <article className={`pool-opportunity-card pool-reference-card stage-${item.stage} ${conflict ? 'possible-conflict' : ''}`} key={item.id} onClick={() => navigate(`/opportunity/${item.id}`)}>
+            <header className="pool-reference-top"><span className="pool-reference-tag stage">{stageName(item.stage)}</span><span className={`pool-reference-tag protection ${conflict ? 'conflict' : item.stage === 'released' ? 'muted' : ''}`}>{protection}</span></header>
+            <h3>{item.customerName}</h3>
+            <p className="pool-reference-meta">{item.industry} · JM 声访</p>
+            <div className="pool-reference-timeline">{stageOrder.map((stage, index) => <span key={stage} className={index <= stageIndex ? 'on' : ''}/>)}</div>
+            <p className="pool-reference-action">{nextAction(item)}</p>
+            <footer className="pool-reference-foot"><span className={`pool-reference-tag health ${health >= 80 ? 'healthy' : health >= 60 ? 'watch' : 'risk'}`}>健康度 · {health}分</span><span className="pool-reference-tag owner">{item.salesOwnerName}</span></footer>
           </article>
         })}
       </div> : <div className="pool-list-wrap"><div className="pool-list-head"><span>客户 / 产品</span><span>阶段</span><span>保护状态</span><span>健康度</span><span>负责人</span><span>最新进展</span><span>下一步推进建议</span></div>{paged.map(item => {
