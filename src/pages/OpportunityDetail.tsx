@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText, Phone, Mail, MessageCircle, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Target, Users, Link2, MessageSquareText, Phone, Mail, MessageCircle, Plus, Trash2, Eye } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, ApiError } from '../api'
@@ -74,6 +74,7 @@ export default function OpportunityDetail() {
   const [decryptedContact, setDecryptedContact] = useState<{ name: string; contact?: string } | null>(null)
   const [contactLoading, setContactLoading] = useState(false)
   const [contactError, setContactError] = useState('')
+  const [showContactConfirm, setShowContactConfirm] = useState(false)
   const [previewEvidence, setPreviewEvidence] = useState<{ url: string; name: string } | null>(null)
   const [showGroupInspection, setShowGroupInspection] = useState(false)
   const [groupSaved, setGroupSaved] = useState(false)
@@ -96,30 +97,11 @@ export default function OpportunityDetail() {
   const canViewContact = !!opp && (opp.salesOwnerId === currentUser.id || isAdminRole(currentUser.role))
 
   const contactOpportunityId = opp?.id
-  const encryptedContactName = opp?.contact?.encryptedName
   useEffect(() => {
-    if (!contactOpportunityId || !canViewContact || !encryptedContactName) {
-      setDecryptedContact(null)
-      setContactError('')
-      return
-    }
-
-    let cancelled = false
-    setContactLoading(true)
+    setDecryptedContact(null)
     setContactError('')
-    opportunityApi.getContact(contactOpportunityId)
-      .then(contact => {
-        if (!cancelled) setDecryptedContact(contact)
-      })
-      .catch(e => {
-        if (!cancelled) setContactError(e instanceof ApiError ? e.message : '联系人解密失败')
-      })
-      .finally(() => {
-        if (!cancelled) setContactLoading(false)
-      })
-
-    return () => { cancelled = true }
-  }, [contactOpportunityId, canViewContact, encryptedContactName])
+    setShowContactConfirm(false)
+  }, [contactOpportunityId])
 
   useEffect(() => {
     if (!contactOpportunityId) return
@@ -172,6 +154,19 @@ export default function OpportunityDetail() {
     setGroupSaved(true)
     setGroupError('')
     setShowGroupInspection(false)
+  }
+
+  const decryptContact = async () => {
+    setShowContactConfirm(false)
+    setContactLoading(true)
+    setContactError('')
+    try {
+      setDecryptedContact(await opportunityApi.getContact(opp.id))
+    } catch (error) {
+      setContactError(error instanceof ApiError ? error.message : '联系人解密失败')
+    } finally {
+      setContactLoading(false)
+    }
   }
 
 
@@ -245,7 +240,7 @@ export default function OpportunityDetail() {
   const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : ['contacting', 'proposal'].includes(opp.stage) ? '完善需求方案并推动客户确认' : ['negotiation', 'signing'].includes(opp.stage) ? '推进报价谈判与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进交付验收与客户反馈' : '确认是否重新激活商机'
   const productInterest = `${opp.industry.replace(/\s*\/\s*/g, ' · ')}解决方案`
   const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
-  const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError ? '••••' : '已加密')
+  const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError || contact.encryptedName ? '••••' : '待补充')
   const timelineItems = [
     ...progressReports.slice().reverse().map(item => ({ id: item.id, time: formatDate(item.createdAt), title: statusMeta[item.status]?.label || '推进更新', body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售操作' })),
     { id: 'created', time: formatDate(opp.reportedAt), title: '商机创建', body: `${opp.source === 'channel' ? '渠道报备' : '销售报备'}完成，进入商机保护并开始持续跟进。`, type: 'context', label: '商机上下文' },
@@ -345,7 +340,7 @@ export default function OpportunityDetail() {
               <div className={`sx-field ${!opp.amountRange ? 'warn' : ''}`}><label>预算</label><strong>{amountLabel(opp.amountRange)}</strong></div>
               <div className="sx-field"><label>需求部门</label><strong>{contact.department || '待补充'}</strong></div>
               <div className="sx-field"><label>商机类型</label><strong>{opp.source === 'channel' ? '渠道商机' : '直客商机'}</strong></div>
-              <div className="sx-field sx-contact-field"><div><label>联系人 · {contact.level}</label><strong className="with-lock"><Lock size={12} />{contactName}</strong></div><span className="sx-contact-methods"><i className={contact.contactTypes.includes('wechat') ? 'active' : ''} title="微信"><MessageCircle size={15} /></i><i className={contact.contactTypes.includes('phone') ? 'active' : ''} title="手机号"><Phone size={15} /></i><i className={contact.contactTypes.includes('email') ? 'active' : ''} title="邮箱"><Mail size={15} /></i></span></div>
+              <div className="sx-field sx-contact-field"><div><label>联系人 · {contact.level}</label><strong className="with-lock"><Lock size={12} />{contactName}{canViewContact && contact.encryptedName && !decryptedContact && <button className="sx-contact-eye" onClick={() => setShowContactConfirm(true)} disabled={contactLoading} aria-label="查看联系人" title="解密查看联系人"><Eye size={14} /></button>}</strong>{decryptedContact?.contact && <small className="sx-contact-value">{decryptedContact.contact}</small>}{contactError && <small className="sx-contact-error">{contactError}</small>}</div><span className="sx-contact-methods"><i className={contact.contactTypes.includes('wechat') ? 'active' : ''} title="微信"><MessageCircle size={15} /></i><i className={contact.contactTypes.includes('phone') ? 'active' : ''} title="手机号"><Phone size={15} /></i><i className={contact.contactTypes.includes('email') ? 'active' : ''} title="邮箱"><Mail size={15} /></i></span></div>
             </div>
             {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div></div>}
           </article>
@@ -392,6 +387,8 @@ export default function OpportunityDetail() {
           </article>
         </aside>
       </section>
+
+      {showContactConfirm && <div className="sx-contact-confirm-backdrop" onMouseDown={event => event.target === event.currentTarget && setShowContactConfirm(false)}><section className="sx-contact-confirm"><div className="sx-contact-confirm-icon"><Eye size={20} /></div><h2>确认查看联系人？</h2><p>联系人姓名及联系方式属于敏感信息。确认查看后，本次解密操作将计入审计日志。</p><div><button onClick={() => setShowContactConfirm(false)}>取消</button><button className="primary" onClick={decryptContact}>确认查看</button></div></section></div>}
 
       {showGroupInspection && <div className="sx-inspection-backdrop" onMouseDown={event => event.target === event.currentTarget && setShowGroupInspection(false)}>
         <section className="sx-inspection-modal">
