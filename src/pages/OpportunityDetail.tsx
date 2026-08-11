@@ -40,6 +40,15 @@ const inputStyle = {
   boxSizing: 'border-box' as const, fontFamily: 'inherit',
 }
 
+function timelineStamp(value: string) {
+  const date = new Date(value)
+  const hasTime = /T\d{2}:\d{2}/.test(value)
+  const clock = hasTime && !Number.isNaN(date.getTime())
+    ? `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    : '12:00'
+  return { date: formatDate(value), clock }
+}
+
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -274,15 +283,15 @@ export default function OpportunityDetail() {
   const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
   const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError || contact.encryptedName ? '••••' : '待补充')
   const signedTimelineItem = opp.signedDate && typeof opp.signedAmount === 'number'
-    ? [{ id: 'signed-update', time: formatDate(opp.signedDate), title: '签约信息已确认', body: `签约金额 ${formatSignedAmount(opp.signedAmount)} 万元，签约时间 ${formatDate(opp.signedDate)}${opp.contractNo ? `，合同编号 ${opp.contractNo}` : ''}${opp.contractFileId ? '，已上传签约凭证' : ''}。`, type: 'manual', label: '销售更新' }]
+    ? [{ id: 'signed-update', at: opp.signedDate, title: '签约信息已确认', body: `签约金额 ${formatSignedAmount(opp.signedAmount)} 万元，签约时间 ${formatDate(opp.signedDate)}${opp.contractNo ? `，合同编号 ${opp.contractNo}` : ''}${opp.contractFileId ? '，已上传签约凭证' : ''}。`, type: 'manual', label: '销售更新' }]
     : []
-  const progressTimelineItems = progressReports.slice().reverse().map(item => ({ id: item.id, time: formatDate(item.createdAt), title: `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`, body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售更新' }))
-  const salesTimelineItems = [...signedTimelineItem, ...progressTimelineItems, ...(!signedTimelineItem.length && !progressTimelineItems.length ? [{ id: 'stage-update', time: formatDate(opp.updatedAt), title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
+  const progressTimelineItems = progressReports.map(item => ({ id: item.id, at: item.createdAt, title: `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`, body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售更新' }))
+  const salesTimelineItems = [...signedTimelineItem, ...progressTimelineItems, ...(!signedTimelineItem.length && !progressTimelineItems.length ? [{ id: 'stage-update', at: opp.updatedAt, title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
   const timelineItems = [
     ...salesTimelineItems,
-    { id: 'ai-summary', time: formatDate(opp.updatedAt), title: 'AI 销售伙伴总结', body: `${opp.customerName}当前处于「${stageName(opp.stage)}」，商机健康度 ${healthScore} 分。${riskText}`, type: 'ai', label: 'AI 总结' },
-    { id: 'context', time: formatDate(opp.reportedAt), title: `${opp.source === 'channel' ? opp.channelName || '渠道报备' : '销售报备'} · 商机上下文`, body: opp.requirementDescription || `${opp.customerName}的商机信息已进入上下文，等待补充具体需求。`, type: 'context', label: '商机上下文' },
-  ]
+    { id: 'ai-summary', at: opp.updatedAt, title: 'AI 销售伙伴总结', body: `${opp.customerName}当前处于「${stageName(opp.stage)}」，商机健康度 ${healthScore} 分。${riskText}`, type: 'ai', label: 'AI 总结' },
+    { id: 'context', at: opp.reportedAt, title: `${opp.source === 'channel' ? opp.channelName || '渠道报备' : '销售报备'} · 商机上下文`, body: opp.requirementDescription || `${opp.customerName}的商机信息已进入上下文，等待补充具体需求。`, type: 'context', label: '商机上下文' },
+  ].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime()).map(item => ({ ...item, ...timelineStamp(item.at) }))
 
   return (
     <div>
@@ -389,7 +398,7 @@ export default function OpportunityDetail() {
           <article className="sx-panel">
             <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && !['released', 'closed'].includes(opp.stage) && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupSaved && groupConfig.enabled ? 'bound' : ''} onClick={() => setShowGroupInspection(true)}><Users size={13} />商机群巡检{groupSaved ? <em>{groupConfig.enabled ? `已开启 · ${groupConfig.groups.length} 个群` : '已暂停'}</em> : null}</button></div></header>
             <div className="sx-progress-axis">
-              {timelineItems.map((item, index) => <div key={item.id} className={`sx-progress-item ${item.type}`}><time>{item.time}</time><i>{index < timelineItems.length - 1 && <span />}</i><div><header><strong>{item.title}</strong><em>{item.label}</em></header><p>{item.body}</p></div></div>)}
+              {timelineItems.map((item, index) => <div key={item.id} className={`sx-progress-item ${item.type} ${index === 0 ? 'latest' : ''}`}><time><span>{item.date}</span><b>{item.clock}</b></time><i>{index < timelineItems.length - 1 && <span />}</i><div><header><strong>{item.title}</strong><em>{item.label}</em></header><p>{item.body}</p></div></div>)}
             </div>
           </article>
         </div>
