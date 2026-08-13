@@ -67,8 +67,7 @@ export default function Login() {
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 0 : 48 }}>
           {/* ── Left: form ── */}
           <div style={{ flex: '1 1 0', maxWidth: 400, margin: isMobile ? '0 auto' : '0', width: '100%' }}>
-            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0a3a4a', textAlign: 'center', margin: '8px 0 4px' }}>欢迎登录</h1>
-            <p style={{ fontSize: 13, color: '#6b8a96', textAlign: 'center', margin: '0 0 26px' }}>JoyMarketing 商机报备与管理系统</p>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0a3a4a', textAlign: 'center', margin: '8px 0 26px' }}>欢迎登录</h1>
 
             {/* Email */}
             <label style={{ fontSize: 12, fontWeight: 600, color: '#2a5a70', display: 'block', marginBottom: 7 }}>账号邮箱</label>
