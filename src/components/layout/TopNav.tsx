@@ -88,8 +88,8 @@ export default function TopNav() {
             <img src="/scale-x-logo-20260813.png" alt="Scale X" style={{ width: isMobile ? 108 : 120, height: 'auto', flexShrink: 0, objectFit: 'contain' }} />
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
-              fontWeight: 700, fontSize: 11.5, letterSpacing: '1.2px',
-              padding: '4px 11px', lineHeight: 1.3,
+              fontWeight: 700, fontSize: 9.5, letterSpacing: '.1px',
+              padding: '5px 10px', lineHeight: 1.3, whiteSpace: 'nowrap',
               color: '#1657c8',
               border: '1px solid rgba(22,87,200,0.22)',
               background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(220,235,255,0.45))',
@@ -99,7 +99,7 @@ export default function TopNav() {
             }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, transform: 'skewX(12deg)' }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'conic-gradient(from 220deg, #38bdf8, #8b5cf6, #ec4899, #f97316, #38bdf8)', flexShrink: 0, boxShadow: '0 0 6px rgba(236,72,153,0.45)' }} />
-                CRM
+                AI 驱动的新一代企业销售增长引擎
               </span>
             </span>
           </div>
@@ -322,8 +322,8 @@ export default function TopNav() {
                 <img src="/scale-x-logo-20260813.png" alt="Scale X" style={{ width: 112, height: 'auto', objectFit: 'contain' }} />
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
-                  fontWeight: 700, fontSize: 11.5, letterSpacing: '1.2px',
-                  padding: '4px 11px', lineHeight: 1.3,
+                  fontWeight: 700, fontSize: 9.5, letterSpacing: '.1px',
+                  padding: '5px 10px', lineHeight: 1.3, whiteSpace: 'nowrap',
                   color: '#1657c8',
                   border: '1px solid rgba(22,87,200,0.22)',
                   background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(220,235,255,0.45))',
@@ -333,7 +333,7 @@ export default function TopNav() {
                 }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, transform: 'skewX(12deg)' }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'conic-gradient(from 220deg, #38bdf8, #8b5cf6, #ec4899, #f97316, #38bdf8)', flexShrink: 0, boxShadow: '0 0 6px rgba(236,72,153,0.45)' }} />
-                    CRM
+                    AI 驱动的新一代企业销售增长引擎
                   </span>
                 </span>
               </div>

@@ -48,18 +48,18 @@ export default function Login() {
         boxShadow: '0 20px 70px rgba(14,120,160,0.14)',
       }}>
         {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: isMobile ? 24 : 8 }}>
+        <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 6 : 9, marginBottom: isMobile ? 24 : 8 }}>
           <img src="/scale-x-logo-20260813.png" alt="Scale X" style={{ width: isMobile ? 150 : 180, height: 'auto', objectFit: 'contain' }} />
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 5,
-            fontWeight: 700, fontSize: 11.5, letterSpacing: '1.2px', color: '#1657c8',
-            padding: '4px 11px', border: '1px solid rgba(22,87,200,0.22)',
+            fontWeight: 700, fontSize: isMobile ? 9.5 : 10.5, letterSpacing: '.2px', color: '#1657c8',
+            padding: '5px 11px', border: '1px solid rgba(22,87,200,0.22)', whiteSpace: 'nowrap',
             background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(220,235,255,0.45))',
             boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8)', borderRadius: 4, transform: 'skewX(-12deg)',
           }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, transform: 'skewX(12deg)' }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'conic-gradient(from 220deg, #38bdf8, #8b5cf6, #ec4899, #f97316, #38bdf8)', boxShadow: '0 0 6px rgba(236,72,153,0.45)' }} />
-              CRM
+              AI 驱动的新一代企业销售增长引擎
             </span>
           </span>
         </div>
