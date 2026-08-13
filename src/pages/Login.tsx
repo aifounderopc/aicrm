@@ -49,7 +49,7 @@ export default function Login() {
       }}>
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: isMobile ? 24 : 8 }}>
-          <img src="/logo.png" alt="Scale X" style={{ width: isMobile ? 150 : 180, height: 'auto', objectFit: 'contain' }} />
+          <img src="/scale-x-logo-20260813.png" alt="Scale X" style={{ width: isMobile ? 150 : 180, height: 'auto', objectFit: 'contain' }} />
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 5,
             fontWeight: 700, fontSize: 11.5, letterSpacing: '1.2px', color: '#1657c8',

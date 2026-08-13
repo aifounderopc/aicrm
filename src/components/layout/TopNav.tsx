@@ -85,7 +85,7 @@ export default function TopNav() {
 
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0, minWidth: 150 }}>
-            <img src="/logo.png" alt="Scale X" style={{ width: isMobile ? 108 : 120, height: 'auto', flexShrink: 0, objectFit: 'contain' }} />
+            <img src="/scale-x-logo-20260813.png" alt="Scale X" style={{ width: isMobile ? 108 : 120, height: 'auto', flexShrink: 0, objectFit: 'contain' }} />
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               fontWeight: 700, fontSize: 11.5, letterSpacing: '1.2px',
@@ -319,7 +319,7 @@ export default function TopNav() {
             {/* Drawer header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 20px 16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <img src="/logo.png" alt="Scale X" style={{ width: 112, height: 'auto', objectFit: 'contain' }} />
+                <img src="/scale-x-logo-20260813.png" alt="Scale X" style={{ width: 112, height: 'auto', objectFit: 'contain' }} />
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
                   fontWeight: 700, fontSize: 11.5, letterSpacing: '1.2px',
