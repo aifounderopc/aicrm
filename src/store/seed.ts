@@ -1,8 +1,60 @@
-import type { AppState } from '../types'
+import type { AppState, Opportunity } from '../types'
 import { addDays } from '../utils'
 
 const now = new Date().toISOString()
 const d = (offset: number) => addDays(now, offset)
+const demoPasswords = {
+  admin: import.meta.env.VITE_DEMO_ADMIN_PASSWORD ?? '',
+  channelAdmin: import.meta.env.VITE_DEMO_CHANNEL_ADMIN_PASSWORD ?? '',
+  salesAdmin: import.meta.env.VITE_DEMO_SALES_ADMIN_PASSWORD ?? '',
+  sales: import.meta.env.VITE_DEMO_SALES_PASSWORD ?? '',
+  channel: import.meta.env.VITE_DEMO_CHANNEL_PASSWORD ?? '',
+  jdManager: import.meta.env.VITE_DEMO_JD_MANAGER_PASSWORD ?? '',
+}
+
+const accountOpportunitySpecs = [
+  { id: 'opp_sales_ly_phone', customerName: '小米', companyName: '小米科技有限责任公司', industry: '3C / 数码', ownerId: 'u_ly', ownerName: '林悦', source: 'direct', stage: 'contacting', amountRange: '20to50', department: '手机市场部', requirement: '围绕小米手机新品用户洞察开展声访 AI 调研，已确认核心人群与首轮访谈范围。' },
+  { id: 'opp_sales_ly_appliance', customerName: '海信', companyName: '海信集团控股股份有限公司', industry: '家电 / 智能硬件', ownerId: 'u_ly', ownerName: '林悦', source: 'direct', stage: 'proposal', amountRange: '20to50', department: '智慧家电事业部', requirement: '针对海信智慧家电购买决策链路开展声访 AI 调研，研究方案已提交客户评审。' },
+  { id: 'opp_sales_ly_beauty', customerName: '欧莱雅', companyName: '欧莱雅（中国）有限公司', industry: '美妆 / 护肤', ownerId: 'u_ly', ownerName: '林悦', source: 'direct', stage: 'reporting', amountRange: '10to20', department: '消费者洞察部', requirement: '通过声访 AI 调研了解欧莱雅新品试用反馈与复购驱动因素，正在补充样本人群。' },
+  { id: 'opp_sales_zn_phone', customerName: 'vivo', companyName: '维沃移动通信有限公司', industry: '3C / 数码', ownerId: 'u_zn', ownerName: '周宁', source: 'direct', stage: 'negotiation', amountRange: '20to50', department: '用户研究部', requirement: 'vivo 手机影像功能用户体验声访 AI 调研已完成需求确认，进入报价谈判阶段。' },
+  { id: 'opp_sales_zn_appliance', customerName: '美的', companyName: '美的集团股份有限公司', industry: '家电 / 智能硬件', ownerId: 'u_zn', ownerName: '周宁', source: 'direct', stage: 'contacting', amountRange: '10to20', department: '用户体验中心', requirement: '围绕美的智能家居使用体验开展声访 AI 调研，已约定业务团队需求沟通会。' },
+  { id: 'opp_sales_zn_beauty', customerName: '雅诗兰黛', companyName: '雅诗兰黛（上海）商贸有限公司', industry: '美妆 / 护肤', ownerId: 'u_zn', ownerName: '周宁', source: 'direct', stage: 'proposal', amountRange: '20to50', department: '品牌洞察部', requirement: '雅诗兰黛高端护肤消费动机声访 AI 调研已形成执行方案，等待客户确认排期。' },
+  { id: 'opp_channel_xl_phone', customerName: 'OPPO', companyName: 'OPPO 广东移动通信有限公司', industry: '3C / 数码', ownerId: 'ch_xlsz', ownerName: '星链数字', source: 'channel', channelId: 'c_xlsz', channelName: '星链数字', stage: 'contacting', amountRange: '20to50', department: '用户洞察部', requirement: 'OPPO 手机换机需求声访 AI 调研由星链数字引荐，已完成研究目标与样本口径沟通。' },
+  { id: 'opp_channel_xl_appliance', customerName: 'TCL', companyName: 'TCL 科技集团股份有限公司', industry: '家电 / 智能硬件', ownerId: 'ch_xlsz', ownerName: '星链数字', source: 'channel', channelId: 'c_xlsz', channelName: '星链数字', stage: 'reporting', amountRange: '10to20', department: '智能终端事业部', requirement: 'TCL 大屏产品家庭场景声访 AI 调研由星链数字报备，正在确认联系人和预算。' },
+  { id: 'opp_channel_xl_beauty', customerName: '珀莱雅', companyName: '珀莱雅化妆品股份有限公司', industry: '美妆 / 护肤', ownerId: 'ch_xlsz', ownerName: '星链数字', source: 'channel', channelId: 'c_xlsz', channelName: '星链数字', stage: 'proposal', amountRange: '10to20', department: '市场研究部', requirement: '珀莱雅功效护肤人群声访 AI 调研已完成初步访谈框架，方案等待品牌方评审。' },
+  { id: 'opp_channel_yq_phone', customerName: '一加', companyName: '深圳市万普拉斯科技有限公司', industry: '3C / 数码', ownerId: 'ch_yqkj', ownerName: '云启科技', source: 'channel', channelId: 'c_yqkj', channelName: '云启科技', stage: 'proposal', amountRange: '10to20', department: '产品策略部', requirement: '一加手机核心用户声访 AI 调研由云启科技引荐，研究框架与交付物已提交。' },
+  { id: 'opp_channel_yq_appliance', customerName: '格力', companyName: '珠海格力电器股份有限公司', industry: '家电 / 智能硬件', ownerId: 'ch_yqkj', ownerName: '云启科技', source: 'channel', channelId: 'c_yqkj', channelName: '云启科技', stage: 'negotiation', amountRange: '20to50', department: '市场用户研究部', requirement: '格力空调焕新需求声访 AI 调研已确认样本规模，当前推进预算与执行周期审批。' },
+  { id: 'opp_channel_yq_beauty', customerName: '花西子', companyName: '浙江宜格企业管理集团有限公司', industry: '美妆 / 护肤', ownerId: 'ch_yqkj', ownerName: '云启科技', source: 'channel', channelId: 'c_yqkj', channelName: '云启科技', stage: 'contacting', amountRange: '10to20', department: '消费者运营部', requirement: '花西子彩妆用户偏好声访 AI 调研由云启科技报备，正在确认重点品类与目标人群。' },
+] as const
+
+const newAccountOpportunities: Opportunity[] = accountOpportunitySpecs.map((item, index) => ({
+  id: item.id,
+  customerName: item.customerName,
+  companyName: item.companyName,
+  industry: item.industry,
+  productInterests: ['JM 声访'],
+  source: item.source,
+  channelId: 'channelId' in item ? item.channelId : undefined,
+  channelName: 'channelName' in item ? item.channelName : undefined,
+  channelManagerName: item.source === 'channel' ? (item.channelId === 'c_xlsz' ? '潘子恒' : '马思源') : undefined,
+  saOwnerId: item.ownerId,
+  saOwnerName: item.ownerName,
+  salesOwnerId: item.ownerId,
+  salesOwnerName: item.ownerName,
+  stage: item.stage,
+  reportedAt: d(-12 - index),
+  updatedAt: d(-Math.max(1, 6 - index % 5)),
+  releaseAt: d(18 + index),
+  lockedPermanently: false,
+  contact: { level: index % 3 === 0 ? '决策层' : '执行层', department: item.department, contactTypes: index % 2 === 0 ? ['wechat', 'phone'] : ['email', 'phone'], encryptedName: `${item.customerName}业务负责人` },
+  firstContactDate: d(-14 - index),
+  requirementDescription: item.requirement,
+  amountRange: item.amountRange,
+  evidenceFiles: [{ id: `ef_${item.id}`, name: '声访调研需求沟通记录.jpg', url: '#', uploadedAt: d(-12 - index), uploadedBy: item.ownerId }],
+  isFrozen: false,
+  progressReports: [],
+  renewalRequests: [],
+}))
 
 export const seedData: AppState = {
   currentUser: {
@@ -13,33 +65,37 @@ export const seedData: AppState = {
   },
 
   users: [
-    { id: 'admin1',    name: '张管理',  role: 'admin',         email: 'admin@joymarketing.com', password: 'Admin@Joy2024' },
-    { id: 'cadmin1',   name: '李渠道',  role: 'channel_admin', email: 'channeladmin@joymarketing.com', password: 'Channel@Joy2024' },
-    { id: 'sadmin1',   name: '王直客',  role: 'sales_admin',   email: 'salesadmin@joymarketing.com',   password: 'Sales@Joy2024' },
+    { id: 'admin1',    name: '张管理',  role: 'admin',         email: 'admin@joymarketing.com', password: demoPasswords.admin },
+    { id: 'cadmin1',   name: '李渠道',  role: 'channel_admin', email: 'channeladmin@joymarketing.com', password: demoPasswords.channelAdmin },
+    { id: 'sadmin1',   name: '王直客',  role: 'sales_admin',   email: 'salesadmin@joymarketing.com',   password: demoPasswords.salesAdmin },
     // 销售团队（默认密码 Joy@Sales2024）
-    { id: 'u_yd',     name: '严頔',    role: 'sales',   email: 'yandi@joymarketing.com',        password: 'Joy@Sales2024' },
-    { id: 'u_cyz',    name: '陈耀忠',  role: 'sales',   email: 'chenyaozhong@joymarketing.com', password: 'Joy@Sales2024' },
-    { id: 'u_fzj',    name: '范泽瑾',  role: 'sales',   email: 'fanzejin@joymarketing.com',     password: 'Joy@Sales2024' },
-    { id: 'u_yj',     name: '俞佳',    role: 'sales',   email: 'yujia@joymarketing.com',        password: 'Joy@Sales2024' },
-    { id: 'u_pzh',    name: '潘子恒',  role: 'sales',   email: 'panziheng@joymarketing.com',    password: 'Joy@Sales2024' },
-    { id: 'u_msy',    name: '马思源',  role: 'sales',   email: 'masiyuan@joymarketing.com',     password: 'Joy@Sales2024' },
-    { id: 'u_zjy',    name: '周金月',  role: 'sales',   email: 'zhoujinyue@joymarketing.com',   password: 'Joy@Sales2024' },
-    { id: 'u_cr',     name: '曹睿',    role: 'sales',   email: 'caorui@joymarketing.com',       password: 'Joy@Sales2024' },
-    { id: 'u_cy',     name: '柴彦',    role: 'sales',   email: 'chaiyan@joymarketing.com',      password: 'Joy@Sales2024' },
-    { id: 'u_css',    name: '崔姗姗',  role: 'sales',   email: 'cuishanshan@joymarketing.com',  password: 'Joy@Sales2024' },
-    { id: 'u_zxp',    name: '张晓培',  role: 'sales',   email: 'zhangxiaopei@joymarketing.com', password: 'Joy@Sales2024' },
+    { id: 'u_yd',     name: '严頔',    role: 'sales',   email: 'yandi@joymarketing.com',        password: demoPasswords.sales },
+    { id: 'u_cyz',    name: '陈耀忠',  role: 'sales',   email: 'chenyaozhong@joymarketing.com', password: demoPasswords.sales },
+    { id: 'u_fzj',    name: '范泽瑾',  role: 'sales',   email: 'fanzejin@joymarketing.com',     password: demoPasswords.sales },
+    { id: 'u_yj',     name: '俞佳',    role: 'sales',   email: 'yujia@joymarketing.com',        password: demoPasswords.sales },
+    { id: 'u_pzh',    name: '潘子恒',  role: 'sales',   email: 'panziheng@joymarketing.com',    password: demoPasswords.sales },
+    { id: 'u_msy',    name: '马思源',  role: 'sales',   email: 'masiyuan@joymarketing.com',     password: demoPasswords.sales },
+    { id: 'u_zjy',    name: '周金月',  role: 'sales',   email: 'zhoujinyue@joymarketing.com',   password: demoPasswords.sales },
+    { id: 'u_cr',     name: '曹睿',    role: 'sales',   email: 'caorui@joymarketing.com',       password: demoPasswords.sales },
+    { id: 'u_cy',     name: '柴彦',    role: 'sales',   email: 'chaiyan@joymarketing.com',      password: demoPasswords.sales },
+    { id: 'u_css',    name: '崔姗姗',  role: 'sales',   email: 'cuishanshan@joymarketing.com',  password: demoPasswords.sales },
+    { id: 'u_zxp',    name: '张晓培',  role: 'sales',   email: 'zhangxiaopei@joymarketing.com', password: demoPasswords.sales },
+    { id: 'u_ly',     name: '林悦',    role: 'sales',   email: 'linyue@joymarketing.com',        password: demoPasswords.sales, group: '智能终端组', createdAt: d(-7) },
+    { id: 'u_zn',     name: '周宁',    role: 'sales',   email: 'zhouning@joymarketing.com',      password: demoPasswords.sales, group: '消费品牌组', createdAt: d(-6) },
     // 渠道账号（默认密码 Joy@Partner2024）
-    { id: 'ch_xnkj',  name: '小能科技', role: 'channel', email: 'xnkj@partner.com', channelId: 'c_xnkj', password: 'Joy@Partner2024' },
-    { id: 'ch_kj',    name: '科技',     role: 'channel', email: 'kj@partner.com',    channelId: 'c_kj',   password: 'Joy@Partner2024' },
-    { id: 'ch_sykj',  name: '三亿科技', role: 'channel', email: 'sykj@partner.com', channelId: 'c_sykj', password: 'Joy@Partner2024' },
-    { id: 'ch_ykkj',  name: '驿氪科技', role: 'channel', email: 'ykkj@partner.com', channelId: 'c_ykkj', password: 'Joy@Partner2024' },
-    { id: 'ch_jxkj',  name: '佳翔科技', role: 'channel', email: 'jxkj@partner.com', channelId: 'c_jxkj', password: 'Joy@Partner2024' },
+    { id: 'ch_xnkj',  name: '小能科技', role: 'channel', email: 'xnkj@partner.com', channelId: 'c_xnkj', password: demoPasswords.channel },
+    { id: 'ch_kj',    name: '科技',     role: 'channel', email: 'kj@partner.com',    channelId: 'c_kj',   password: demoPasswords.channel },
+    { id: 'ch_sykj',  name: '三亿科技', role: 'channel', email: 'sykj@partner.com', channelId: 'c_sykj', password: demoPasswords.channel },
+    { id: 'ch_ykkj',  name: '驿氪科技', role: 'channel', email: 'ykkj@partner.com', channelId: 'c_ykkj', password: demoPasswords.channel },
+    { id: 'ch_jxkj',  name: '佳翔科技', role: 'channel', email: 'jxkj@partner.com', channelId: 'c_jxkj', password: demoPasswords.channel },
+    { id: 'ch_xlsz',  name: '星链数字', role: 'channel', email: 'xinglian@partner.com', channelId: 'c_xlsz', password: demoPasswords.channel, createdAt: d(-5) },
+    { id: 'ch_yqkj',  name: '云启科技', role: 'channel', email: 'yunqi@partner.com', channelId: 'c_yqkj', password: demoPasswords.channel, createdAt: d(-4) },
     // 京东渠道经理账号（独立登录，默认密码 Jd@Manager2024）
-    { id: 'jd_xnkj',  name: '周经理', role: 'channel', email: 'zhou.jd@joymarketing.com', channelId: 'c_xnkj', isJdManager: true, password: 'Jd@Manager2024' },
-    { id: 'jd_kj',    name: '吴经理', role: 'channel', email: 'wu.jd@joymarketing.com',   channelId: 'c_kj',   isJdManager: true, password: 'Jd@Manager2024' },
-    { id: 'jd_sykj',  name: '郑经理', role: 'channel', email: 'zheng.jd@joymarketing.com', channelId: 'c_sykj', isJdManager: true, password: 'Jd@Manager2024' },
-    { id: 'jd_ykkj',  name: '孙经理', role: 'channel', email: 'sun.jd@joymarketing.com',  channelId: 'c_ykkj', isJdManager: true, password: 'Jd@Manager2024' },
-    { id: 'jd_jxkj',  name: '冯经理', role: 'channel', email: 'feng.jd@joymarketing.com', channelId: 'c_jxkj', isJdManager: true, password: 'Jd@Manager2024' },
+    { id: 'jd_xnkj',  name: '周经理', role: 'channel', email: 'zhou.jd@joymarketing.com', channelId: 'c_xnkj', isJdManager: true, password: demoPasswords.jdManager },
+    { id: 'jd_kj',    name: '吴经理', role: 'channel', email: 'wu.jd@joymarketing.com',   channelId: 'c_kj',   isJdManager: true, password: demoPasswords.jdManager },
+    { id: 'jd_sykj',  name: '郑经理', role: 'channel', email: 'zheng.jd@joymarketing.com', channelId: 'c_sykj', isJdManager: true, password: demoPasswords.jdManager },
+    { id: 'jd_ykkj',  name: '孙经理', role: 'channel', email: 'sun.jd@joymarketing.com',  channelId: 'c_ykkj', isJdManager: true, password: demoPasswords.jdManager },
+    { id: 'jd_jxkj',  name: '冯经理', role: 'channel', email: 'feng.jd@joymarketing.com', channelId: 'c_jxkj', isJdManager: true, password: demoPasswords.jdManager },
   ],
 
   channels: [
@@ -48,6 +104,8 @@ export const seedData: AppState = {
     { id: 'c_sykj', name: '三亿科技', contactName: '三亿负责人', email: 'sykj@partner.com',  phone: '13900000003', status: 'active', createdAt: d(-75), jdManagerName: '郑经理', jdManagerEmail: 'zheng.jd@joymarketing.com' },
     { id: 'c_ykkj', name: '驿氪科技', contactName: '驿氪负责人', email: 'ykkj@partner.com',  phone: '13900000004', status: 'active', createdAt: d(-60), jdManagerName: '孙经理', jdManagerEmail: 'sun.jd@joymarketing.com' },
     { id: 'c_jxkj', name: '佳翔科技', contactName: '佳翔负责人', email: 'jxkj@partner.com',  phone: '13900000005', status: 'active', createdAt: d(-70), jdManagerName: '冯经理', jdManagerEmail: 'feng.jd@joymarketing.com' },
+    { id: 'c_xlsz', name: '星链数字', fullName: '上海星链数字科技有限公司', contactName: '顾晨', email: 'xinglian@partner.com', phone: '13900000006', status: 'active', createdAt: d(-5), jdManagerName: '潘子恒' },
+    { id: 'c_yqkj', name: '云启科技', fullName: '杭州云启智能科技有限公司', contactName: '宋雨', email: 'yunqi@partner.com', phone: '13900000007', status: 'active', createdAt: d(-4), jdManagerName: '马思源' },
   ],
 
   opportunities: [
@@ -564,6 +622,7 @@ export const seedData: AppState = {
       evidenceFiles: [{ id: 'ef24', name: '合作方案沟通.jpg', url: '#', uploadedAt: d(-24), uploadedBy: 'u_msy' }],
       isFrozen: false, progressReports: [], renewalRequests: [],
     },
+    ...newAccountOpportunities,
   ],
 
   logs: [],
