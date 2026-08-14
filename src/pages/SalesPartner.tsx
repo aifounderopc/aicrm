@@ -38,6 +38,15 @@ function greetingText(hour = new Date().getHours()) {
   return '晚上好'
 }
 
+function signalTime(value: string) {
+  const updatedAt = new Date(value)
+  const now = new Date()
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const dayDiff = Math.max(0, Math.round((startOfDay(now) - startOfDay(updatedAt)) / 86_400_000))
+  const time = updatedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${dayDiff === 0 ? '今天' : `${dayDiff} 天前`} ${time}`
+}
+
 export default function SalesPartner() {
   const { currentUser, opportunities } = useStore()
   const navigate = useNavigate()
@@ -69,21 +78,24 @@ export default function SalesPartner() {
   const urgent = [...active].sort((a, b) => daysUntil(a.releaseAt) - daysUntil(b.releaseAt))
   const channels: Exclude<SignalChannel, 'all'>[] = ['jingme', 'feishu', 'email', 'meeting']
   const signalTypes = ['需求更新', '需求确认', '报价谈判', '签约推进']
-  const signals = active.slice(0, 10).map((opp, index) => {
-    const channel = channels[index % channels.length]
-    const expiring = !opp.lockedPermanently && daysUntil(opp.releaseAt) <= 7
-    return {
-      id: `${opp.id}-${channel}`,
-      opportunityId: opp.id,
-      channel,
-      time: index < 3 ? `今天 ${String(10 + index).padStart(2, '0')}:${index ? '20' : '05'}` : `${index - 2} 天前`,
-      title: opp.customerName,
-      tag: signalTypes[index % signalTypes.length],
-      summary: expiring
-        ? `「${stageText(opp.stage)}」商机保护期仅剩 ${Math.max(daysUntil(opp.releaseAt), 0)} 天，建议尽快补充进展或申请续期。`
-        : `「${stageText(opp.stage)}」${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
-    }
-  })
+  const signals = [...active]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 50)
+    .map((opp, index) => {
+      const channel = channels[index % channels.length]
+      const expiring = !opp.lockedPermanently && daysUntil(opp.releaseAt) <= 7
+      return {
+        id: `${opp.id}-${channel}`,
+        opportunityId: opp.id,
+        channel,
+        time: signalTime(opp.updatedAt),
+        title: opp.customerName,
+        tag: signalTypes[index % signalTypes.length],
+        summary: expiring
+          ? `「${stageText(opp.stage)}」商机保护期仅剩 ${Math.max(daysUntil(opp.releaseAt), 0)} 天，建议尽快补充进展或申请续期。`
+          : `「${stageText(opp.stage)}」${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
+      }
+    })
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
 
   const suggestions = [
