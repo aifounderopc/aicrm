@@ -78,17 +78,27 @@ export default function SalesPartner() {
   const urgent = [...active].sort((a, b) => daysUntil(a.releaseAt) - daysUntil(b.releaseAt))
   const channels: Exclude<SignalChannel, 'all'>[] = ['jingme', 'feishu', 'email', 'meeting']
   const signalTypes = ['需求更新', '需求确认', '报价谈判', '签约推进']
-  const signals = [...active]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  const featuredSignals = [
+    active.find(opp => opp.customerName.startsWith('三星')),
+    active.find(opp => opp.customerName.startsWith('宝洁（衣清）')) ?? active.find(opp => opp.customerName.startsWith('宝洁')),
+  ].filter((opp): opp is Opportunity => Boolean(opp))
+  const featuredSignalIds = new Set(featuredSignals.map(opp => opp.id))
+  const signals = [
+    ...featuredSignals,
+    ...active
+      .filter(opp => !featuredSignalIds.has(opp.id))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+  ]
     .slice(0, 50)
     .map((opp, index) => {
-      const channel = channels[index % channels.length]
+      const featured = featuredSignalIds.has(opp.id)
+      const channel = featured ? 'feishu' : channels[index % channels.length]
       const expiring = !opp.lockedPermanently && daysUntil(opp.releaseAt) <= 7
       return {
         id: `${opp.id}-${channel}`,
         opportunityId: opp.id,
         channel,
-        time: signalTime(opp.updatedAt),
+        time: signalTime(featured ? new Date(Date.now() - index * 5 * 60_000).toISOString() : opp.updatedAt),
         title: opp.customerName,
         tag: signalTypes[index % signalTypes.length],
         summary: expiring
