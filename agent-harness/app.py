@@ -112,6 +112,8 @@ def run_agent(body: RunInput) -> dict[str, Any]:
         try:
             with _lock:
                 result = harness(candidate).run(candidate.prompt, session_id=candidate.session_id)
+            if not (result.final_response or "").strip():
+                raise RuntimeError("model returned an empty response")
             return {
                 "sessionId": result.session_id,
                 "content": result.final_response,
@@ -158,6 +160,8 @@ def stream_agent(body: RunInput) -> StreamingResponse:
             try:
                 with _lock:
                     result = harness(candidate).run(candidate.prompt, session_id=candidate.session_id, on_notification=on_notification)
+                if not emitted and not (result.final_response or "").strip():
+                    raise RuntimeError("model returned an empty response")
                 if not emitted and result.final_response:
                     events.put({"type": "delta", "content": result.final_response})
                 events.put({"type": "done", "sessionId": result.session_id, "finishReason": result.finish_reason, "model": candidate.model or MODEL, "fallbackUsed": index > 0})
