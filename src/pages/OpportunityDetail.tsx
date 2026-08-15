@@ -54,6 +54,21 @@ function timelineStamp(value: string) {
   return { date: formatDate(value), clock }
 }
 
+function keyProgressCategory(text: string, signalType?: string) {
+  if (signalType && signalType !== '需求更新') return signalType
+  if (/风险|延期|暂停|取消|拒绝|阻塞/.test(text)) return '风险变化'
+  if (/交付|上线|验收|排期/.test(text)) return '交付进展'
+  if (/合同|签约|盖章|主体/.test(text)) return '签约推进'
+  if (/报价|预算|价格|采购/.test(text)) return '报价谈判'
+  if (/方案|demo|测试|评审/i.test(text)) return '方案确认'
+  if (/联系人|联系方式|部门|负责人/.test(text)) return '关键资料'
+  return signalType || '需求进展'
+}
+
+function cleanProgressSummary(text: string) {
+  return text.replace(/^【[^】]+】/, '').replace(/\s+/g, ' ').trim().replace(/[；;。]+$/, '')
+}
+
 export default function OpportunityDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -352,27 +367,69 @@ export default function OpportunityDetail() {
   const signedTimelineItem = opp.signedDate && typeof opp.signedAmount === 'number'
     ? [{ id: 'signed-update', at: opp.signedDate, title: '签约信息已确认', body: `签约金额 ${formatSignedAmount(opp.signedAmount)} 万元，签约时间 ${formatDate(opp.signedDate)}${opp.contractNo ? `，合同编号 ${opp.contractNo}` : ''}${opp.contractFileId ? '，已上传签约凭证' : ''}。`, type: 'manual', label: '销售更新' }]
     : []
-  const progressTimelineItems = progressReports.map(item => {
-    const fromAgent = item.reporterId === 'ai-sales-partner'
+  const manualProgressTimelineItems = progressReports.filter(item => item.reporterId !== 'ai-sales-partner').map(item => {
     return {
       id: item.id,
-      at: fromAgent ? item.lastContactDate : item.createdAt,
-      title: fromAgent ? 'AI 销售伙伴 · 连接器信号同步' : `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`,
+      at: item.createdAt,
+      title: `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`,
       body: item.description,
-      type: fromAgent ? 'ai' : item.status === 'blocked' ? 'risk' : 'manual',
-      label: fromAgent ? 'AI 信号' : '销售更新',
+      type: item.status === 'blocked' ? 'risk' : 'manual',
+      label: '销售更新',
     }
   })
-  const progressSignalTimes = new Set(progressReports.filter(item => item.reporterId === 'ai-sales-partner').map(item => new Date(item.lastContactDate).getTime()))
-  const signalTimelineItems = salesSignals.filter(signal => !progressSignalTimes.has(new Date(signal.occurredAt).getTime())).map(signal => ({
-    id: `signal-${signal.id}`,
-    at: signal.occurredAt,
-    title: `${inspectionChannelLabels[signal.source as InspectionChannel] || signal.source}实时信号 · ${signal.type}`,
-    body: signal.summary,
-    type: 'ai',
-    label: signal.opportunityUpdated ? '已同步详情' : '实时信号',
-  }))
-  const salesTimelineItems = [...signedTimelineItem, ...progressTimelineItems, ...signalTimelineItems, ...(!signedTimelineItem.length && !progressTimelineItems.length && !signalTimelineItems.length ? [{ id: 'stage-update', at: opp.updatedAt, title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
+  const connectorEvents = new Map<number, { id: string; at: string; category: string; body: string; updated: boolean }>()
+  for (const signal of salesSignals) {
+    const at = new Date(signal.occurredAt).getTime()
+    connectorEvents.set(at, { id: signal.id, at: signal.occurredAt, category: keyProgressCategory(signal.summary, signal.type), body: cleanProgressSummary(signal.summary), updated: signal.opportunityUpdated })
+  }
+  for (const report of progressReports.filter(item => item.reporterId === 'ai-sales-partner')) {
+    const at = new Date(report.lastContactDate).getTime()
+    if (!connectorEvents.has(at)) connectorEvents.set(at, { id: report.id, at: report.lastContactDate, category: keyProgressCategory(report.description), body: cleanProgressSummary(report.description), updated: true })
+  }
+  const progressGroups = new Map<string, Array<{ id: string; at: string; body: string; updated: boolean }>>()
+  for (const event of connectorEvents.values()) {
+    const group = progressGroups.get(event.category) ?? []
+    group.push(event)
+    progressGroups.set(event.category, group)
+  }
+  const keyProgressTimelineItems = [...progressGroups.entries()].map(([category, items]) => {
+    const sorted = items.sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime())
+    const summaries = [...new Set(sorted.map(item => item.body).filter(Boolean))].slice(0, 2)
+    return {
+      id: `key-progress-${category}`,
+      at: sorted[0].at,
+      title: `关键进展总结 · ${category}`,
+      body: summaries.join('；'),
+      type: category === '风险变化' ? 'risk' : 'ai',
+      label: sorted.some(item => item.updated) ? '已更新详情' : 'AI 汇总',
+    }
+  }).sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime()).slice(0, 4)
+  const latestKeyProgress = keyProgressTimelineItems[0]
+  const latestActivityAt = [opp.updatedAt, ...progressReports.map(item => item.lastContactDate || item.createdAt), ...salesSignals.map(item => item.occurredAt)]
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0]
+  const inactiveDays = Math.max(0, Math.floor((Date.now() - new Date(latestActivityAt).getTime()) / 86_400_000))
+  const advisorInterpretation = latestKeyProgress
+    ? `${opp.customerName}处于${stageName(opp.stage)}阶段。最新关键进展为“${latestKeyProgress.body}”，已结合最新字段重新评估，健康度 ${healthScore} 分。`
+    : `${opp.customerName}处于${stageName(opp.stage)}阶段，当前缺少可确认的关键推进结论，健康度 ${healthScore} 分。`
+  const advisorWins = [
+    demandDescription ? `需求场景已明确：${demandDescriptionDisplay}` : '需求场景仍待补充，暂无法确认核心赢单点。',
+    productInterests.length ? `${productInterests.join('、')}已进入客户产品兴趣范围。` : '产品兴趣尚未确认。',
+    keyProgressTimelineItems.some(item => /方案确认|报价谈判|签约推进|交付进展/.test(item.title)) ? '已有方案、商务或交付层面的实质推进证据。' : '暂未识别到方案或商务确认类证据。',
+  ].slice(0, 3)
+  const advisorRisks = [
+    riskText,
+    inactiveDays >= 7 ? `最近 ${inactiveDays} 天没有新的有效活动，需要确认商机是否停滞。` : `最近一次有效活动在 ${formatDate(latestActivityAt)}，当前跟进节奏正常。`,
+    keyProgressTimelineItems.some(item => item.type === 'risk') ? '实时信号中存在风险变化，需优先明确责任人和处理时限。' : null,
+  ].filter((item): item is string => Boolean(item))
+  const advisorActions = [
+    latestKeyProgress?.title.includes('方案确认') ? '围绕客户最新反馈确认方案修改项、负责人和确认时间。'
+      : latestKeyProgress?.title.includes('报价谈判') ? '确认报价决策人、异议项和下一次商务确认时间。'
+      : latestKeyProgress?.title.includes('签约推进') ? '明确合同当前节点、双方责任人和预计完成时间。'
+      : latestKeyProgress?.title.includes('交付进展') ? '同步交付里程碑、当前阻塞和下一验收节点。'
+      : nextAction,
+    groupConfig.groups.length ? '持续由商机群巡检捕获新结论，并在出现变化时复核本建议。' : '确认正确的客户群或项目群，补充人工群配置以提高信号匹配准确率。',
+  ]
+  const salesTimelineItems = [...signedTimelineItem, ...manualProgressTimelineItems, ...keyProgressTimelineItems, ...(!signedTimelineItem.length && !manualProgressTimelineItems.length && !keyProgressTimelineItems.length ? [{ id: 'stage-update', at: opp.updatedAt, title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
   const timelineItems = [
     ...salesTimelineItems,
     { id: 'ai-summary', at: opp.updatedAt, title: 'AI 销售伙伴总结', body: `${opp.customerName}当前处于「${stageName(opp.stage)}」，商机健康度 ${healthScore} 分。${riskText}`, type: 'ai', label: 'AI 总结' },
@@ -402,6 +459,21 @@ export default function OpportunityDetail() {
       setAdvisorResponding(false)
       advisorAbortRef.current = null
     }
+  }
+
+  const continueInSalesPartner = (question: string) => {
+    navigate('/', { state: { aiHandoff: {
+      nonce: `${opp.id}-${Date.now()}`,
+      opportunityId: opp.id,
+      customerName: opp.customerName,
+      question,
+      context: {
+        stage: stageName(opp.stage), amount: amountLabel(opp.amountRange),
+        requirement: demandDescriptionDisplay || '待补充',
+        latestProgress: latestKeyProgress?.body || '暂无已确认关键进展',
+        risks: advisorRisks.slice(0, 2), actions: advisorActions,
+      },
+    } } })
   }
 
   return (
@@ -528,12 +600,12 @@ export default function OpportunityDetail() {
 
           <article className="sx-panel sx-ai-panel">
             <header className="sx-panel-head"><div><span>OPPORTUNITY X-RAY</span><h2>Scale X 商机参谋</h2></div><Sparkles size={18} /></header>
-            <section className="hero"><h3>商机解读</h3><p>{opp.customerName}当前处于{stageName(opp.stage)}阶段，{intentLevel}，健康度 {healthScore} 分。</p></section>
-            <section><h3>赢单机会</h3><ul><li>{productInterests.join('、')}与客户当前需求场景匹配。</li><li>预算口径为{amountLabel(opp.amountRange)}。</li></ul></section>
-            <section className="risk"><h3>风险提醒</h3><ul><li>{riskText}</li></ul></section>
-            <section><h3>下一步行动</h3><ul><li>{nextAction}</li><li>{groupConfig.groups.length ? '商机群已根据实时信号自动绑定并持续巡检。' : '实时信号监听已开启，匹配到商机群后将自动绑定并沉淀上下文。'}</li></ul></section>
+            <section className="hero"><h3>商机解读</h3><p>{advisorInterpretation}</p></section>
+            <section><h3>赢单机会</h3><ul>{advisorWins.map(item => <li key={item}>{item}</li>)}</ul></section>
+            <section className="risk"><h3>风险提醒</h3><ul>{advisorRisks.map(item => <li key={item}>{item}</li>)}</ul></section>
+            <section><h3>下一步行动</h3><ul>{advisorActions.map(item => <li key={item}>{item}</li>)}</ul></section>
             <div className="sx-advisor-quick">
-              {['分析当前商机', '下一步怎么推进', '生成客户沟通话术'].map(item => <button key={item} onClick={() => askAdvisor(item)} disabled={advisorResponding}>{item}</button>)}
+              {['分析当前商机', '下一步怎么推进', '生成客户沟通话术'].map(item => <button key={item} onClick={() => continueInSalesPartner(item)}>{item}</button>)}
             </div>
             <div className={`sx-advisor-chat ${advisorMessages.length ? 'active' : ''}`} ref={advisorScrollRef}>
               {advisorMessages.map(message => <div key={message.id} className={`sx-advisor-message ${message.role}`}>

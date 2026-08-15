@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, Unlock, X } from 'lucide-react'
 import { useStore } from '../store'
 import { daysUntil } from '../utils'
@@ -7,6 +7,13 @@ import type { Opportunity } from '../types'
 import { agentApi, integrationApi, type AgentSignal as ApiAgentSignal, type FeishuMessage } from '../api'
 
 type ChatMessage = { role: 'assistant' | 'user'; text: string }
+type AiHandoff = {
+  nonce: string
+  opportunityId: string
+  customerName: string
+  question: string
+  context: { stage: string; amount: string; requirement: string; latestProgress: string; risks: string[]; actions: string[] }
+}
 type SignalChannel = 'all' | 'feishu' | 'email' | 'meeting' | 'jingme'
 type SideTab = 'processing' | 'stable' | 'suggestions'
 type SalesSignal = { id: string; opportunityId?: string; channel: Exclude<SignalChannel, 'all'>; time: string; title: string; tag: string; summary: string; sourceCount?: number }
@@ -56,9 +63,39 @@ function feishuSignalType(content: string) {
   return '需求更新'
 }
 
+function cleanAnswerInline(value: string) {
+  return value
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .trim()
+}
+
+function FormattedAssistantAnswer({ text, loading }: { text: string; loading: boolean }) {
+  if (!text) return <div className="ai-answer-loading">{loading ? '正在分析 CRM 字段与关键进展…' : ''}</div>
+  const lines = text.replace(/```[\s\S]*?```/g, block => block.replace(/```\w*/g, '').replace(/```/g, '')).split('\n')
+  return <div className="ai-answer-content">{lines.map((raw, index) => {
+    const line = raw.trim()
+    if (!line || /^\|?\s*:?-{3,}/.test(line)) return null
+    const heading = line.match(/^#{1,6}\s+(.+)/)
+    if (heading) return <h4 key={index}>{cleanAnswerInline(heading[1])}</h4>
+    const labeled = cleanAnswerInline(line).match(/^(结论|关键依据|关键进展|风险提醒|赢单机会|下一步(?:行动|建议)?|建议|可直接发送的话术)[：:]\s*(.*)$/)
+    if (labeled) return <section className="ai-answer-section" key={index}><strong>{labeled[1]}</strong>{labeled[2] && <p>{labeled[2]}</p>}</section>
+    const bullet = line.match(/^(?:[-*•]|\d+[.)、])\s*(.+)$/)
+    if (bullet) return <div className="ai-answer-bullet" key={index}><i /> <span>{cleanAnswerInline(bullet[1])}</span></div>
+    if (line.includes('|')) {
+      const cells = line.split('|').map(cleanAnswerInline).filter(Boolean)
+      return cells.length ? <div className="ai-answer-bullet" key={index}><i /><span>{cells.join(' · ')}</span></div> : null
+    }
+    return <p key={index}>{cleanAnswerInline(line)}</p>
+  })}</div>
+}
+
 export default function SalesPartner() {
   const { currentUser, opportunities, bootstrap } = useStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const [filter, setFilter] = useState<SignalChannel>('all')
   const [input, setInput] = useState('')
   const [done, setDone] = useState<string[]>([])
@@ -79,6 +116,9 @@ export default function SalesPartner() {
   const sessionIdRef = useRef<string | undefined>(undefined)
   const chatAbortRef = useRef<AbortController | undefined>(undefined)
   const signalIdsRef = useRef(new Set<string>())
+  const handoffHandledRef = useRef<string | null>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
+  const askRef = useRef<(question: string, displayQuestion?: string) => Promise<void>>(async () => {})
 
   useEffect(() => {
     document.body.classList.add('ai-partner-open')
@@ -321,10 +361,10 @@ export default function SalesPartner() {
     }, 'image/png')
   }
 
-  const ask = async (question = input) => {
+  const ask = async (question = input, displayQuestion?: string) => {
     const q = question.trim()
     if (!q || isResponding) return
-    setMessages(items => [...items, { role: 'user', text: q }, { role: 'assistant', text: '' }])
+    setMessages(items => [...items, { role: 'user', text: displayQuestion || q }, { role: 'assistant', text: '' }])
     setInput('')
     setIsResponding(true)
     const controller = new AbortController()
@@ -345,6 +385,28 @@ export default function SalesPartner() {
       window.setTimeout(() => inputRef.current?.focus(), 0)
     }
   }
+  askRef.current = ask
+
+  useEffect(() => {
+    const handoff = (location.state as { aiHandoff?: AiHandoff } | null)?.aiHandoff
+    if (!handoff || handoffHandledRef.current === handoff.nonce) return
+    handoffHandledRef.current = handoff.nonce
+    const prompt = [
+      `请仅针对商机“${handoff.customerName}”（ID: ${handoff.opportunityId}）回答：${handoff.question}。`,
+      `当前阶段：${handoff.context.stage}；预算：${handoff.context.amount}。`,
+      `需求场景：${handoff.context.requirement}。`,
+      `最新关键进展：${handoff.context.latestProgress}。`,
+      `当前风险：${handoff.context.risks.join('；') || '暂无明确高优先级风险'}。`,
+      `详情页建议：${handoff.context.actions.join('；')}。`,
+      '请结合服务端最新授权上下文继续分析，先给结论，再给关键依据和可执行下一步。不要输出 Markdown 标记或表格。',
+    ].join('\n')
+    void askRef.current(prompt, `继续分析「${handoff.customerName}」：${handoff.question}`)
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate])
+
+  useEffect(() => {
+    chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages])
 
   const renderSideList = () => {
     if (sideTab === 'suggestions') return suggestions.map(item => (
@@ -401,12 +463,12 @@ export default function SalesPartner() {
         </header>
         <div className="ai-conversation-main">
           <div className="ai-chat-column">
-            <div className="ai-chat-scroll">
+            <div className="ai-chat-scroll" ref={chatScrollRef}>
               <div className="ai-greeting"><div className="ai-bot-avatar"><img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
               <div className="ai-summary-card"><div className="ai-summary-intro"><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批/处理</small><strong>{processing.length}</strong></div><em>待办事项</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{releasingSoon.length}</strong></div><em>7 天内</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); if (item.id === 'priority') ask('帮我写跟进话术'); else navigate(`/opportunity/${item.opp.id}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已处理</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
-              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span><p>{message.text || (isResponding && index === messages.length - 1 ? '正在分析 CRM 与飞书信号…' : '')}</p></div>)}
+              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span>{message.role === 'assistant' ? <FormattedAssistantAnswer text={message.text} loading={isResponding && index === messages.length - 1} /> : <p>{message.text}</p>}</div>)}
             </div>
             <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} disabled={isResponding} onClick={() => void ask(q)}>{q}</button>)}</div><div className={`ai-inputbar ${isResponding ? 'responding' : ''}`}><MessageCircle size={18} /><input ref={inputRef} disabled={isResponding} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && void ask()} placeholder={isResponding ? 'AI 销售伙伴正在分析…' : '你有什么商机进展 / 推进问题，都可以问我…'} /><button disabled={isResponding} onClick={() => void ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note"><i className={agentConfigured ? 'online' : 'fallback'} />{agentConfigured ? 'DeepSeek Harness 已连接 · ' : '规则模式 · '}Scale X 仅基于你有权访问的 CRM 与连接器数据提供商机分析和推进支持</div></div>
           </div>
