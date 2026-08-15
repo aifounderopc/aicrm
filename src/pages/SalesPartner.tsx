@@ -73,7 +73,7 @@ function cleanAnswerInline(value: string) {
     .trim()
 }
 
-const answerLabels = '结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|使用提醒'
+const answerLabels = '核心判断|结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒'
 
 function answerLines(text: string) {
   const normalized = text
@@ -109,16 +109,18 @@ function AnalysisComplete({ seconds }: { seconds: number }) {
 }
 
 function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showProcess }: { text: string; loading: boolean; status?: string; phase: ThinkingPhase; seconds: number; showProcess: boolean }) {
+  const [expanded, setExpanded] = useState(false)
   if (!text) return <div className="ai-answer-loading">{loading ? <AnalysisProgress phase={phase} status={status || '正在分析 CRM 字段与关键进展…'} seconds={seconds} /> : '本次未收到有效回复，请重新提问。'}</div>
   const lines = answerLines(text)
-  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} /> : showProcess && <AnalysisComplete seconds={seconds} />}{lines.map((raw, index) => {
+  const shouldCollapse = !loading && text.length > 650
+  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} /> : showProcess && <AnalysisComplete seconds={seconds} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{lines.map((raw, index) => {
     const line = raw.trim()
     if (!line || /^\|?\s*:?-{3,}/.test(line)) return null
     const heading = line.match(/^#{1,6}\s+(.+)/)
     if (heading) return <h4 key={index}>{renderAnswerInline(heading[1])}</h4>
-    const labeled = cleanAnswerInline(line).match(/^(结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|使用提醒)[：:]\s*(.*)$/)
+    const labeled = cleanAnswerInline(line).match(/^(核心判断|结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒)[：:]\s*(.*)$/)
     if (labeled) {
-      const kind = /风险|提醒/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议|成功/.test(labeled[1]) ? 'action' : 'conclusion'
+      const kind = /风险|提醒|注意/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议|成功/.test(labeled[1]) ? 'action' : 'conclusion'
       const paragraphs = labeled[2].match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? []
       return <section className={`ai-answer-section ${kind}`} key={index}><strong>{labeled[1]}</strong>{paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex}>{renderAnswerInline(paragraph)}</p>)}</section>
     }
@@ -129,7 +131,7 @@ function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showP
       return cells.length ? <div className="ai-answer-bullet" key={index}><i /><span>{cells.join(' · ')}</span></div> : null
     }
     return <p key={index}>{renderAnswerInline(line)}</p>
-  })}</div>
+  })}</div>{shouldCollapse && <button type="button" className="ai-answer-expand" onClick={() => setExpanded(value => !value)}>{expanded ? '收起详细内容' : '展开详细分析'}</button>}</div>
 }
 
 export default function SalesPartner() {

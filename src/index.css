@@ -377,6 +377,7 @@ body.ai-partner-open { overflow: hidden; }
 .ai-answer-section.evidence { border-left-color:#70909a; background:#f5f8f9; }.ai-answer-section.evidence > strong { color:#506f78; }
 .ai-answer-content mark { padding:1px 4px; border-radius:4px; color:#096f86; background:#e8f6f8; font-weight:700; }
 .ai-answer-emphasis { color:#173f4a; font-weight:800; }
+.ai-answer-body { position:relative; }.ai-answer-body.compact { max-height:360px; overflow:hidden; }.ai-answer-body.compact::after { content:""; position:absolute; right:0; bottom:0; left:0; height:72px; background:linear-gradient(transparent,#fff); pointer-events:none; }.ai-answer-expand { display:block; width:100%; margin-top:8px; padding:7px 10px; border:1px solid #d8e8ec; border-radius:8px; color:#0d7187; background:#f7fbfc; font-size:11px; font-weight:700; cursor:pointer; }.ai-answer-expand:hover { background:#edf7f9; }
 .ai-analysis-progress { min-width:min(470px,65vw); margin-bottom:9px; padding:9px 10px; border:1px solid rgba(14,120,150,.09); border-radius:10px; background:linear-gradient(135deg,#f5fbfc,#fbfefe); }
 .ai-analysis-progress > div { display:flex; align-items:center; gap:8px; }
 .ai-analysis-progress span { display:flex; align-items:center; gap:5px; color:#9aacb1; font-size:10px; font-weight:650; }
