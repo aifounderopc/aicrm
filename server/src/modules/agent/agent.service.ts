@@ -25,7 +25,7 @@ type SignalExtraction = {
 }
 
 type HarnessRun = { sessionId: string; content: string; finishReason?: string }
-const SIGNAL_PROCESSING_VERSION = 2
+const SIGNAL_PROCESSING_VERSION = 3
 
 const STAGE_RANK: Record<OpportunityStage, number> = {
   reporting: 0, contacting: 1, proposal: 2, negotiation: 3, signing: 3,
@@ -76,7 +76,7 @@ function materialProgress(content: string, fields: ReturnType<typeof explicitFie
   const clean = content.replace(/@_user_\d+/g, '').replace(/\s+/g, ' ').trim()
   const hasBusinessChange = /(?:已确认|已提交|已确定|已通过|已拒绝|报价|预算|合同|签约|盖章|会议时间|已约|排期|启动交付|完成交付|验收|延期|暂停|取消|风险)/.test(clean)
   if (!hasBusinessChange && !fields.companyName && !fields.contactName && !fields.contactPhone && !fields.contactDepartment) return null
-  return clean.slice(0, 220)
+  return clean.replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3').slice(0, 220)
 }
 
 function findOpportunity(message: { chatName: string; contentText: string }, opportunities: Opportunity[]): Opportunity | undefined {
@@ -154,7 +154,9 @@ function validateExtraction(value: unknown, fallback: SignalExtraction, opportun
   const fallbackProgress = materialProgress(content, { companyName, contactName, contactPhone, contactDepartment })
   const modelProgress = typeof item.progressSummary === 'string' && item.progressSummary.trim()
     ? item.progressSummary.trim().slice(0, 220) : null
-  const progressSummary = fallbackProgress ? (modelProgress ?? fallbackProgress) : null
+  const progressSummary = fallbackProgress
+    ? (modelProgress ?? fallbackProgress).replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3')
+    : null
   return {
     signalType,
     matchedOpportunityId,
@@ -268,8 +270,16 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
 
     if (extraction.shouldAppendProgress && extraction.progressSummary) {
       const description = `【飞书 · ${message.chatName}】${extraction.progressSummary}`
-      const duplicate = await tx.progressReport.findFirst({ where: { opportunityId: opportunity.id, reporterId: 'ai-sales-partner', description } })
-      if (!duplicate) await tx.progressReport.create({
+      const sameMessageProgress = await tx.progressReport.findMany({
+        where: { opportunityId: opportunity.id, reporterId: 'ai-sales-partner', lastContactDate: message.createdAt },
+        orderBy: { createdAt: 'asc' }, select: { id: true },
+      })
+      if (sameMessageProgress[0]) {
+        await tx.progressReport.update({ where: { id: sameMessageProgress[0].id }, data: { description } })
+        if (sameMessageProgress.length > 1) {
+          await tx.progressReport.deleteMany({ where: { id: { in: sameMessageProgress.slice(1).map(item => item.id) } } })
+        }
+      } else await tx.progressReport.create({
         data: {
           opportunityId: opportunity.id,
           reporterId: 'ai-sales-partner',
