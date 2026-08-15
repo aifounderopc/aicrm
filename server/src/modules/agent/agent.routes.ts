@@ -180,51 +180,114 @@ const stageLabels: Record<string, string> = {
   signing: '报价谈判', signed: '已签约', delivery: '已交付', closed: '已关闭', released: '已释放',
 }
 
-agentRouter.get('/opportunities/:id/inspection', ah(async (req, res) => {
-  const auth = req.auth!
-  const opportunity = await prisma.opportunity.findFirst({
-    where: { id: req.params.id, ...opportunityWhere(auth) },
-    select: { id: true },
-  })
-  if (!opportunity) throw new ApiError(404, '商机不存在或无权访问')
+const inspectionInputSchema = z.object({
+  groups: z.array(z.object({
+    manualId: z.string().trim().min(1).max(120).optional(),
+    channel: z.enum(['feishu', 'wecom', 'dingtalk', 'jingme']),
+    sourceGroupId: z.string().trim().min(1).max(200).nullable().optional(),
+    groupId: z.string().trim().min(1, '请输入群 ID').max(200),
+    groupName: z.string().trim().min(1, '请输入群名称').max(200),
+    secret: z.string().trim().max(500).optional(),
+  })).max(20),
+})
 
-  const signals = await prisma.salesSignal.findMany({
-    where: { opportunityId: opportunity.id, confidence: { gte: 0.75 } },
-    include: { sourceMessage: { select: { chatId: true, chatName: true, createdAt: true } } },
-    orderBy: { createdAt: 'desc' },
-    take: 250,
-  })
-  const groupMap = new Map<string, {
-    channel: string
-    groupId: string
-    groupName: string
-    signalCount: number
-    lastSignalAt: Date
+async function inspectionPayload(opportunityId: string) {
+  const [signals, bindings] = await Promise.all([
+    prisma.salesSignal.findMany({
+      where: { opportunityId, confidence: { gte: 0.75 } },
+      include: { sourceMessage: { select: { chatId: true, chatName: true, createdAt: true } } },
+      orderBy: { createdAt: 'desc' }, take: 250,
+    }),
+    prisma.opportunityInspectionBinding.findMany({ where: { opportunityId, enabled: true }, orderBy: { updatedAt: 'desc' } }),
+  ])
+  const automatic = new Map<string, {
+    channel: string; sourceGroupId: string; groupId: string; groupName: string
+    signalCount: number; lastSignalAt: Date
   }>()
   for (const signal of signals) {
     const key = `${signal.source}:${signal.sourceMessage.chatId}`
-    const current = groupMap.get(key)
+    const current = automatic.get(key)
     if (current) current.signalCount += 1
-    else groupMap.set(key, {
-      channel: signal.source === 'feishu' ? '飞书' : signal.source,
-      groupId: signal.sourceMessage.chatId,
-      groupName: signal.sourceMessage.chatName,
-      signalCount: 1,
-      lastSignalAt: signal.sourceMessage.createdAt,
+    else automatic.set(key, {
+      channel: signal.source, sourceGroupId: signal.sourceMessage.chatId,
+      groupId: signal.sourceMessage.chatId, groupName: signal.sourceMessage.chatName,
+      signalCount: 1, lastSignalAt: signal.sourceMessage.createdAt,
     })
   }
-
-  res.json({
-    opportunityId: opportunity.id,
-    enabled: true,
-    mode: 'automatic',
-    frequency: '实时',
-    range: '持续接收新信号',
-    output: '自动更新商机字段与推进进展',
-    groups: [...groupMap.values()],
-    signalCount: signals.length,
-    latestSignalAt: signals[0]?.createdAt ?? null,
+  const usedBindings = new Set<string>()
+  const groups = [...automatic.values()].map(group => {
+    const override = bindings.find(item => item.channel === group.channel && item.sourceGroupId === group.sourceGroupId)
+    if (override) usedBindings.add(override.id)
+    return {
+      manualId: override?.id,
+      channel: override?.channel ?? group.channel,
+      sourceGroupId: group.sourceGroupId as string | null,
+      groupId: override?.groupId ?? group.groupId,
+      groupName: override?.groupName ?? group.groupName,
+      hasSecret: Boolean(override?.encryptedSecret),
+      origin: override ? 'manual' : 'automatic',
+      signalCount: group.signalCount,
+      lastSignalAt: group.lastSignalAt,
+    }
   })
+  for (const binding of bindings) {
+    if (usedBindings.has(binding.id)) continue
+    groups.push({
+      manualId: binding.id, channel: binding.channel, sourceGroupId: binding.sourceGroupId,
+      groupId: binding.groupId, groupName: binding.groupName,
+      hasSecret: Boolean(binding.encryptedSecret), origin: 'manual', signalCount: 0, lastSignalAt: binding.updatedAt,
+    })
+  }
+  return {
+    opportunityId, enabled: true, mode: bindings.length ? 'hybrid' : 'automatic',
+    frequency: '实时', range: '持续接收新信号', output: '自动更新商机字段与推进进展',
+    groups, signalCount: signals.length, latestSignalAt: signals[0]?.createdAt ?? null,
+  }
+}
+
+agentRouter.get('/opportunities/:id/inspection', ah(async (req, res) => {
+  const opportunity = await prisma.opportunity.findFirst({
+    where: { id: req.params.id, ...opportunityWhere(req.auth!) }, select: { id: true },
+  })
+  if (!opportunity) throw new ApiError(404, '商机不存在或无权访问')
+  res.json(await inspectionPayload(opportunity.id))
+}))
+
+agentRouter.put('/opportunities/:id/inspection', ah(async (req, res) => {
+  const auth = req.auth!
+  const opportunity = await prisma.opportunity.findFirst({
+    where: { id: req.params.id, ...opportunityWhere(auth) }, select: { id: true, customerName: true },
+  })
+  if (!opportunity) throw new ApiError(404, '商机不存在或无权访问')
+  const input = inspectionInputSchema.parse(req.body)
+  const keys = input.groups.map(group => `${group.channel}:${group.groupId}`)
+  if (new Set(keys).size !== keys.length) throw new ApiError(400, '同一渠道的群 ID 不能重复')
+  const conflicts = input.groups.length ? await prisma.opportunityInspectionBinding.findMany({
+    where: { opportunityId: { not: opportunity.id }, OR: input.groups.map(group => ({ channel: group.channel, groupId: group.groupId })) },
+    select: { groupId: true, groupName: true },
+  }) : []
+  if (conflicts[0]) throw new ApiError(409, `群“${conflicts[0].groupName}”已绑定其他商机`)
+
+  const existing = await prisma.opportunityInspectionBinding.findMany({ where: { opportunityId: opportunity.id } })
+  const existingById = new Map(existing.map(item => [item.id, item]))
+  await prisma.$transaction(async tx => {
+    await tx.opportunityInspectionBinding.deleteMany({ where: { opportunityId: opportunity.id } })
+    for (const group of input.groups) {
+      const previous = group.manualId ? existingById.get(group.manualId) : undefined
+      await tx.opportunityInspectionBinding.create({ data: {
+        opportunityId: opportunity.id, channel: group.channel,
+        sourceGroupId: group.sourceGroupId ?? null, groupId: group.groupId, groupName: group.groupName,
+        encryptedSecret: group.secret ? encryptField(group.secret) : previous?.encryptedSecret ?? null,
+        enabled: true, updatedBy: auth.user.id,
+      } })
+    }
+  })
+  await writeLog(req, {
+    actorId: auth.user.id, actorName: auth.user.name, action: '更新商机群巡检配置',
+    detail: `${opportunity.customerName}：保存 ${input.groups.length} 个自动覆盖/人工群配置`,
+    targetType: 'opportunity', targetId: opportunity.id,
+  })
+  res.json(await inspectionPayload(opportunity.id))
 }))
 
 function streamFallback(res: ExpressResponse, sessionId: string, answer: string) {

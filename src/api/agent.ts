@@ -66,14 +66,18 @@ export type OpportunityAdvisorContext = {
 export type OpportunityInspection = {
   opportunityId: string
   enabled: boolean
-  mode: 'automatic'
+  mode: 'automatic' | 'hybrid'
   frequency: string
   range: string
   output: string
   groups: Array<{
-    channel: string
+    manualId?: string
+    channel: 'feishu' | 'wecom' | 'dingtalk' | 'jingme'
+    sourceGroupId: string | null
     groupId: string
     groupName: string
+    hasSecret: boolean
+    origin: 'automatic' | 'manual'
     signalCount: number
     lastSignalAt: string
   }>
@@ -127,6 +131,14 @@ export const agentApi = {
   opportunityContext: (opportunityId: string) => api.get<OpportunityAdvisorContext>(`/agent/opportunities/${encodeURIComponent(opportunityId)}/context`),
   opportunityInspection: (opportunityId: string, signal?: AbortSignal) =>
     api.get<OpportunityInspection>(`/agent/opportunities/${encodeURIComponent(opportunityId)}/inspection`, undefined, signal),
+  updateOpportunityInspection: (opportunityId: string, input: { groups: Array<{
+    manualId?: string
+    channel: 'feishu' | 'wecom' | 'dingtalk' | 'jingme'
+    sourceGroupId?: string | null
+    groupId: string
+    groupName: string
+    secret?: string
+  }> }) => api.put<OpportunityInspection>(`/agent/opportunities/${encodeURIComponent(opportunityId)}/inspection`, input),
   streamChat: (input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>
     streamFrom('/agent/chat/stream', input, onEvent, signal),
   streamOpportunityChat: (opportunityId: string, input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>

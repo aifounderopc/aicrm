@@ -69,6 +69,17 @@ export interface ProgressReport {
   createdAt: string
 }
 
+export interface OpportunitySignal {
+  id: string
+  type: string
+  summary: string
+  confidence: number
+  source: string
+  chatName: string
+  occurredAt: string
+  opportunityUpdated: boolean
+}
+
 export interface RenewalRequest {
   id: string
   opportunityId: string
@@ -144,6 +155,7 @@ export interface Opportunity {
   parentCompanyName?: string
 
   progressReports: ProgressReport[]
+  salesSignals?: OpportunitySignal[]
   renewalRequests: RenewalRequest[]
 
   // notifications

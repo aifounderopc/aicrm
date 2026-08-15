@@ -135,6 +135,7 @@ model Opportunity {
   progressReports ProgressReport[]
   renewalRequests RenewalRequest[]
   salesSignals    SalesSignal[]
+  inspectionBindings OpportunityInspectionBinding[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -143,6 +144,25 @@ model Opportunity {
   @@index([stage])
   @@index([releaseAt])
   @@map("opportunities")
+}
+
+model OpportunityInspectionBinding {
+  id              String      @id @default(cuid())
+  opportunityId   String      @map("opportunity_id")
+  opportunity     Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  channel         String
+  sourceGroupId   String?     @map("source_group_id")
+  groupId         String      @map("group_id")
+  groupName       String      @map("group_name")
+  encryptedSecret String?     @map("encrypted_secret")
+  enabled         Boolean     @default(true)
+  updatedBy       String?     @map("updated_by")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@unique([channel, groupId])
+  @@index([opportunityId])
+  @@map("opportunity_inspection_bindings")
 }
 
 // 敏感联系人：enc_* 为 AES-256-GCM 密文，仅授权接口解密

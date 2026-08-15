@@ -27,7 +27,7 @@ type SignalExtraction = {
 }
 
 type HarnessRun = { sessionId: string; content: string; finishReason?: string }
-const SIGNAL_PROCESSING_VERSION = 6
+const SIGNAL_PROCESSING_VERSION = 7
 
 function redactSensitiveText(value: string | null): string | null {
   return value?.replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3') ?? null
@@ -258,13 +258,31 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
   const message = await prisma.feishuMessage.findUnique({ where: { id: messageId } })
   if (!message) return
   const opportunities = await prisma.opportunity.findMany({ where: { stage: { notIn: ['released', 'closed'] } } })
-  const { extraction, source } = await extractSignal(message, opportunities)
+  const configuredBinding = await prisma.opportunityInspectionBinding.findFirst({
+    where: {
+      channel: 'feishu', groupId: message.chatId, enabled: true,
+      opportunity: { stage: { notIn: ['released', 'closed'] } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+  const extracted = await extractSignal(message, opportunities)
+  const source = extracted.source
+  const extraction: SignalExtraction = configuredBinding
+    ? { ...extracted.extraction, matchedOpportunityId: configuredBinding.opportunityId, confidence: Math.max(0.99, extracted.extraction.confidence) }
+    : extracted.extraction
   const opportunity = extraction.matchedOpportunityId
     ? opportunities.find(item => item.id === extraction.matchedOpportunityId) : undefined
-  const shouldUpdate = Boolean(opportunity && extraction.confidence >= 0.82 && extraction.shouldDisplay)
   const hasPotentialUpdate = Boolean(
     extraction.requirementDescription || extraction.companyName || extraction.contactName || extraction.contactPhone
     || extraction.contactDepartment || extraction.productInterests.length || extraction.suggestedStage || extraction.progressSummary,
+  )
+  const hasVerifiedFieldUpdate = Boolean(
+    extraction.requirementDescription || extraction.companyName || extraction.contactName || extraction.contactPhone
+    || extraction.contactDepartment || extraction.productInterests.length,
+  )
+  const shouldUpdate = Boolean(
+    opportunity && extraction.confidence >= 0.82
+    && (extraction.shouldDisplay || extraction.shouldAppendProgress || hasVerifiedFieldUpdate),
   )
 
   await prisma.$transaction(async tx => {

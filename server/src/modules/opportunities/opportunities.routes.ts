@@ -17,6 +17,12 @@ const opportunityInclude = {
   contact: true,
   evidenceFiles: { orderBy: { uploadedAt: 'desc' as const } },
   progressReports: { orderBy: { createdAt: 'desc' as const } },
+  salesSignals: {
+    where: { confidence: { gte: 0.75 }, signalType: { not: '一般沟通' } },
+    include: { sourceMessage: { select: { chatName: true, createdAt: true } } },
+    orderBy: { createdAt: 'desc' as const },
+    take: 100,
+  },
   renewalRequests: { orderBy: { createdAt: 'desc' as const } },
 }
 
@@ -42,6 +48,16 @@ function toClientOpportunity(opp: NonNullable<OpportunityWithRelations>) {
       uploadedBy: f.uploadedBy,
     })),
     progressReports: opp.progressReports,
+    salesSignals: opp.salesSignals.map(signal => ({
+      id: signal.id,
+      type: signal.signalType,
+      summary: signal.summary,
+      confidence: signal.confidence,
+      source: signal.source,
+      chatName: signal.sourceMessage.chatName,
+      occurredAt: signal.sourceMessage.createdAt,
+      opportunityUpdated: signal.opportunityUpdated,
+    })),
     renewalRequests: opp.renewalRequests,
     contractFileId: opp.contractFileKey ?? undefined,
   }

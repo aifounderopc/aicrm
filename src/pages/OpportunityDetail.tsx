@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Eye, CircleHelp, LoaderCircle } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Eye, CircleHelp, LoaderCircle, Plus, Trash2 } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, agentApi, ApiError } from '../api'
@@ -30,9 +30,13 @@ const pipeline = [
 ]
 const pipelineOrder: Record<string, number> = { reporting: 0, contacting: 1, proposal: 2, negotiation: 3, signing: 3, signed: 4, delivery: 5, closed: 6, released: 6 }
 
-type GroupBinding = { channel: string; groupId: string; groupName: string; signalCount: number; lastSignalAt: string }
-type GroupInspectionConfig = { enabled: boolean; frequency: string; range: string; output: string; signalCount: number; latestSignalAt: string | null; groups: GroupBinding[] }
+type InspectionChannel = 'feishu' | 'wecom' | 'dingtalk' | 'jingme'
+type GroupBinding = { manualId?: string; channel: InspectionChannel; sourceGroupId: string | null; groupId: string; groupName: string; hasSecret: boolean; origin: 'automatic' | 'manual'; signalCount: number; lastSignalAt: string }
+type GroupDraft = GroupBinding & { secret: string }
+type GroupInspectionConfig = { enabled: boolean; mode: 'automatic' | 'hybrid'; frequency: string; range: string; output: string; signalCount: number; latestSignalAt: string | null; groups: GroupBinding[] }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text: string }
+
+const inspectionChannelLabels: Record<InspectionChannel, string> = { feishu: '飞书', wecom: '企微', dingtalk: '钉钉', jingme: '京 ME' }
 
 const inputStyle = {
   width: '100%', padding: '10px 13px', fontSize: 13,
@@ -90,8 +94,10 @@ export default function OpportunityDetail() {
   const [previewEvidence, setPreviewEvidence] = useState<{ url: string; name: string } | null>(null)
   const [showGroupInspection, setShowGroupInspection] = useState(false)
   const [groupLoading, setGroupLoading] = useState(true)
+  const [groupSaving, setGroupSaving] = useState(false)
   const [groupError, setGroupError] = useState('')
-  const [groupConfig, setGroupConfig] = useState<GroupInspectionConfig>({ enabled: true, frequency: '实时', range: '持续接收新信号', output: '自动更新商机字段与推进进展', signalCount: 0, latestSignalAt: null, groups: [] })
+  const [groupDrafts, setGroupDrafts] = useState<GroupDraft[]>([])
+  const [groupConfig, setGroupConfig] = useState<GroupInspectionConfig>({ enabled: true, mode: 'automatic', frequency: '实时', range: '持续接收新信号', output: '自动更新商机字段与推进进展', signalCount: 0, latestSignalAt: null, groups: [] })
   const [advisorMessages, setAdvisorMessages] = useState<AdvisorMessage[]>([])
   const [advisorInput, setAdvisorInput] = useState('')
   const [advisorResponding, setAdvisorResponding] = useState(false)
@@ -143,16 +149,20 @@ export default function OpportunityDetail() {
       controller?.abort()
       controller = new AbortController()
       try {
-        const [inspection, latestOpportunity] = await Promise.all([
+        const [inspectionResult, opportunityResult] = await Promise.allSettled([
           agentApi.opportunityInspection(contactOpportunityId, controller.signal),
           opportunityApi.detail(contactOpportunityId),
         ])
         if (!active) return
-        setGroupConfig(inspection)
-        setGroupError('')
-        useStore.setState(state => ({
-          opportunities: state.opportunities.map(item => item.id === latestOpportunity.id ? latestOpportunity : item),
-        }))
+        if (inspectionResult.status === 'fulfilled') setGroupConfig(inspectionResult.value)
+        if (opportunityResult.status === 'fulfilled') {
+          const latestOpportunity = opportunityResult.value
+          useStore.setState(state => ({
+            opportunities: state.opportunities.map(item => item.id === latestOpportunity.id ? latestOpportunity : item),
+          }))
+        }
+        if (inspectionResult.status === 'rejected' && opportunityResult.status === 'rejected') throw inspectionResult.reason
+        setGroupError(inspectionResult.status === 'rejected' ? '巡检配置同步暂时不可用，商机详情仍在更新' : '')
       } catch (error) {
         if (!active || controller.signal.aborted) return
         setGroupError(error instanceof ApiError ? error.message : '实时信号同步暂时不可用')
@@ -186,6 +196,7 @@ export default function OpportunityDetail() {
   const sc = stageConfig[opp.stage] || stageConfig.released
   const contact = opp.contact ?? { level: '—', department: '—', contactTypes: [] }
   const progressReports = opp.progressReports ?? []
+  const salesSignals = opp.salesSignals ?? []
   const renewalRequests = opp.renewalRequests ?? []
   const evidenceFiles = opp.evidenceFiles ?? []
   const pendingRenewals = renewalRequests.filter(r => r.status === 'pending')
@@ -195,6 +206,33 @@ export default function OpportunityDetail() {
   const submitReport = () => {
     addProgressReport({ opportunityId: opp.id, reporterId: currentUser.id, ...report })
     setShowProgressModal(false)
+  }
+
+  const openGroupInspection = () => {
+    setGroupDrafts(groupConfig.groups.map(group => ({ ...group, secret: '' })))
+    setGroupError('')
+    setShowGroupInspection(true)
+  }
+
+  const saveGroupInspection = async () => {
+    if (groupDrafts.some(group => !group.groupId.trim() || !group.groupName.trim())) {
+      setGroupError('请完整填写群 ID 和群名称')
+      return
+    }
+    setGroupSaving(true)
+    setGroupError('')
+    try {
+      const updated = await agentApi.updateOpportunityInspection(opp.id, { groups: groupDrafts.map(group => ({
+        manualId: group.manualId, channel: group.channel, sourceGroupId: group.sourceGroupId,
+        groupId: group.groupId.trim(), groupName: group.groupName.trim(), secret: group.secret.trim() || undefined,
+      })) })
+      setGroupConfig(updated)
+      setShowGroupInspection(false)
+    } catch (error) {
+      setGroupError(error instanceof ApiError ? error.message : '巡检配置保存失败')
+    } finally {
+      setGroupSaving(false)
+    }
   }
 
   const decryptContact = async () => {
@@ -299,7 +337,7 @@ export default function OpportunityDetail() {
   const completenessScore = Math.round(completenessFields.filter(Boolean).length / completenessFields.length * 100)
   const healthScore = Math.max(35, Math.min(98,
     52 + (['contacting', 'proposal', 'negotiation', 'signing'].includes(opp.stage) ? 16 : opp.stage === 'signed' || opp.stage === 'delivery' ? 28 : 5)
-    + (evidenceFiles.length ? 8 : 0) + (progressReports.length ? 8 : 0) + (days > 7 || opp.lockedPermanently ? 8 : -10)
+    + (evidenceFiles.length ? 8 : 0) + (progressReports.length || salesSignals.length ? 8 : 0) + (days > 7 || opp.lockedPermanently ? 8 : -10)
   ))
   const healthTone = healthScore >= 80 ? 'healthy' : healthScore >= 65 ? 'watch' : healthScore >= 50 ? 'risk' : 'danger'
   const intentLevel = opp.amountRange === 'above50' || opp.amountRange === '20to50' ? '高意向' : opp.amountRange === '10to20' ? '中意向' : '培育中'
@@ -309,7 +347,7 @@ export default function OpportunityDetail() {
   const demandDescription = opp.requirementDescription?.trim() || ''
   const demandDescriptionChars = Array.from(demandDescription)
   const demandDescriptionDisplay = demandDescriptionChars.length > 120 ? `${demandDescriptionChars.slice(0, 120).join('')}…` : demandDescription
-  const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 ? '尚未沉淀结构化推进记录，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
+  const riskText = !opp.lockedPermanently && days <= 7 ? `保护期仅剩 ${Math.max(days, 0)} 天，需要及时续期或补充进展。` : progressReports.length === 0 && salesSignals.length === 0 ? '尚未沉淀结构化推进记录或有效信号，建议补充最近沟通结果。' : '当前未识别到高优先级风险。'
   const contactName = !canViewContact ? '无权限查看' : contactLoading ? '解密中…' : decryptedContact?.name || (contactError || contact.encryptedName ? '••••' : '待补充')
   const signedTimelineItem = opp.signedDate && typeof opp.signedAmount === 'number'
     ? [{ id: 'signed-update', at: opp.signedDate, title: '签约信息已确认', body: `签约金额 ${formatSignedAmount(opp.signedAmount)} 万元，签约时间 ${formatDate(opp.signedDate)}${opp.contractNo ? `，合同编号 ${opp.contractNo}` : ''}${opp.contractFileId ? '，已上传签约凭证' : ''}。`, type: 'manual', label: '销售更新' }]
@@ -318,14 +356,23 @@ export default function OpportunityDetail() {
     const fromAgent = item.reporterId === 'ai-sales-partner'
     return {
       id: item.id,
-      at: item.createdAt,
+      at: fromAgent ? item.lastContactDate : item.createdAt,
       title: fromAgent ? 'AI 销售伙伴 · 连接器信号同步' : `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`,
       body: item.description,
       type: fromAgent ? 'ai' : item.status === 'blocked' ? 'risk' : 'manual',
       label: fromAgent ? 'AI 信号' : '销售更新',
     }
   })
-  const salesTimelineItems = [...signedTimelineItem, ...progressTimelineItems, ...(!signedTimelineItem.length && !progressTimelineItems.length ? [{ id: 'stage-update', at: opp.updatedAt, title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
+  const progressSignalTimes = new Set(progressReports.filter(item => item.reporterId === 'ai-sales-partner').map(item => new Date(item.lastContactDate).getTime()))
+  const signalTimelineItems = salesSignals.filter(signal => !progressSignalTimes.has(new Date(signal.occurredAt).getTime())).map(signal => ({
+    id: `signal-${signal.id}`,
+    at: signal.occurredAt,
+    title: `${inspectionChannelLabels[signal.source as InspectionChannel] || signal.source}实时信号 · ${signal.type}`,
+    body: signal.summary,
+    type: 'ai',
+    label: signal.opportunityUpdated ? '已同步详情' : '实时信号',
+  }))
+  const salesTimelineItems = [...signedTimelineItem, ...progressTimelineItems, ...signalTimelineItems, ...(!signedTimelineItem.length && !progressTimelineItems.length && !signalTimelineItems.length ? [{ id: 'stage-update', at: opp.updatedAt, title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
   const timelineItems = [
     ...salesTimelineItems,
     { id: 'ai-summary', at: opp.updatedAt, title: 'AI 销售伙伴总结', body: `${opp.customerName}当前处于「${stageName(opp.stage)}」，商机健康度 ${healthScore} 分。${riskText}`, type: 'ai', label: 'AI 总结' },
@@ -460,7 +507,7 @@ export default function OpportunityDetail() {
           </article>
 
           <article className="sx-panel">
-            <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && !['released', 'closed'].includes(opp.stage) && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupConfig.enabled ? 'bound' : ''} onClick={() => setShowGroupInspection(true)}><Users size={13} />商机群巡检<em>{groupLoading ? '同步中' : groupConfig.groups.length ? `自动巡检 · ${groupConfig.groups.length} 个群` : '自动监听中'}</em></button></div></header>
+            <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && !['released', 'closed'].includes(opp.stage) && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupConfig.enabled ? 'bound' : ''} onClick={openGroupInspection}><Users size={13} />商机群巡检<em>{groupLoading ? '同步中' : groupConfig.groups.length ? `${groupConfig.mode === 'hybrid' ? '自动 + 人工' : '自动巡检'} · ${groupConfig.groups.length} 个群` : '自动监听中'}</em></button></div></header>
             <div className="sx-progress-axis">
               {timelineItems.map((item, index) => <div key={item.id} className={`sx-progress-item ${item.type} ${index === 0 ? 'latest' : ''}`}><time><span>{item.date}</span><b>{item.clock}</b></time><i>{index < timelineItems.length - 1 && <span />}</i><div><header><strong>{item.title}</strong><em>{item.label}</em></header><p>{item.body}</p></div></div>)}
             </div>
@@ -508,22 +555,28 @@ export default function OpportunityDetail() {
 
       {showGroupInspection && <div className="sx-inspection-backdrop" onMouseDown={event => event.target === event.currentTarget && setShowGroupInspection(false)}>
         <section className="sx-inspection-modal">
-          <header><div><span className="active">{groupLoading ? '正在同步' : '自动巡检已开启'}</span><h2>商机群自动巡检</h2><p>系统根据当前商机的实时连接器信号自动识别并绑定群聊，无需人工填写配置；新信号会自动更新商机字段与推进进展。</p></div><button onClick={() => setShowGroupInspection(false)} aria-label="关闭"><X size={17} /></button></header>
+          <header><div><span className="active">{groupLoading ? '正在同步' : groupConfig.mode === 'hybrid' ? '自动巡检 + 人工配置' : '自动巡检已开启'}</span><h2>商机群巡检配置</h2><p>默认根据当前商机的实时信号自动绑定群聊；销售可在自动结果上修改或新增群 ID、群名和 secret。</p></div><button onClick={() => setShowGroupInspection(false)} aria-label="关闭"><X size={17} /></button></header>
           <div className="sx-inspection-summary"><div><span>关联商机</span><strong>{opp.customerName}</strong></div><div><span>当前状态</span><strong>{groupConfig.groups.length ? `实时巡检 · ${groupConfig.groups.length} 个群 · ${groupConfig.signalCount} 条信号` : '实时监听中 · 等待匹配商机群'}</strong></div></div>
           <div className="sx-group-section">
-            <div className="sx-group-head"><div><strong>自动识别的商机群</strong><p>来自已授权连接器且已可靠匹配当前商机的实时信号</p></div></div>
-            {groupConfig.groups.length ? <><div className="sx-group-labels"><span>渠道来源</span><span>群名称</span><span>有效信号</span><span>最新信号</span></div>
-            <div className="sx-group-list">{groupConfig.groups.map(group => <div className="sx-group-row readonly" key={`${group.channel}-${group.groupId}`}><span>{group.channel}</span><span title={group.groupId}>{group.groupName}</span><span>{group.signalCount} 条</span><span>{formatDate(group.lastSignalAt)}</span></div>)}</div></> : <div className="sx-group-empty">尚未发现与当前商机可靠匹配的群信号。系统会继续监听，匹配成功后自动出现在这里。</div>}
+            <div className="sx-group-head"><div><strong>已配置商机群</strong><p>标记为“自动”的群来自可靠实时信号，保存修改后转为人工覆盖</p></div>{canEdit && <button onClick={() => setGroupDrafts(items => [...items, { channel: 'feishu', sourceGroupId: null, groupId: '', groupName: '', hasSecret: false, origin: 'manual', signalCount: 0, lastSignalAt: new Date().toISOString(), secret: '' }])}><Plus size={13} />新增群</button>}</div>
+            {groupDrafts.length ? <><div className="sx-group-labels editable"><span>渠道</span><span>群 ID</span><span>群名称</span><span>secret</span><span>操作</span></div>
+            <div className="sx-group-list">{groupDrafts.map((group, index) => <div className="sx-group-row editable" key={`${group.manualId || group.sourceGroupId || 'new'}-${index}`}>
+              <select value={group.channel} disabled={!canEdit} onChange={event => setGroupDrafts(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, channel: event.target.value as InspectionChannel } : item))}>{Object.entries(inspectionChannelLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+              <input value={group.groupId} disabled={!canEdit} placeholder="请输入群 ID" onChange={event => setGroupDrafts(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, groupId: event.target.value } : item))} />
+              <input value={group.groupName} disabled={!canEdit} placeholder="请输入群名称" onChange={event => setGroupDrafts(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, groupName: event.target.value } : item))} />
+              <input type="password" value={group.secret} disabled={!canEdit} placeholder={group.hasSecret ? '已配置，留空不修改' : '可选'} onChange={event => setGroupDrafts(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, secret: event.target.value } : item))} />
+              <button disabled={!canEdit || group.origin === 'automatic'} title={group.origin === 'automatic' ? '自动识别群可修改，不能直接移除' : '移除群配置'} onClick={() => setGroupDrafts(items => items.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={13} />{group.origin === 'automatic' ? '自动' : '移除'}</button>
+            </div>)}</div></> : <div className="sx-group-empty">尚未发现匹配群。系统会继续自动监听，也可点击“新增群”人工配置。</div>}
           </div>
           <div className="sx-inspection-grid">
-            <label><span>配置方式</span><strong>基于信号自动配置</strong><em>无需人工录入群 ID 或群名称</em></label>
+            <label><span>配置方式</span><strong>{groupConfig.mode === 'hybrid' ? '实时信号自动配置 + 人工覆盖' : '基于实时信号自动配置'}</strong><em>人工配置会优先参与后续信号匹配</em></label>
             <label><span>巡检频率</span><strong>{groupConfig.frequency}</strong><em>新信号结构化后立即同步</em></label>
             <label><span>消息范围</span><strong>{groupConfig.range}</strong><em>仅处理当前用户有权访问的数据</em></label>
             <label><span>最近同步</span><strong>{groupConfig.latestSignalAt ? formatDate(groupConfig.latestSignalAt) : '等待首条有效信号'}</strong><em>详情页每 5 秒自动刷新</em></label>
             <label className="wide"><span>巡检输出</span><strong>{groupConfig.output}</strong><em>敏感和高影响字段仍遵守人工审批边界</em></label>
           </div>
           {groupError && <div className="sx-inspection-error">{groupError}</div>}
-          <footer><button className="primary" onClick={() => setShowGroupInspection(false)}>完成</button></footer>
+          <footer><button className="secondary" onClick={() => setShowGroupInspection(false)}>取消</button>{canEdit && <button className="primary" disabled={groupSaving} onClick={() => void saveGroupInspection()}>{groupSaving ? '保存中…' : '保存配置'}</button>}</footer>
         </section>
       </div>}
 
