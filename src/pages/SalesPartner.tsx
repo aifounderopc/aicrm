@@ -73,7 +73,7 @@ function cleanAnswerInline(value: string) {
     .trim()
 }
 
-const answerLabels = '核心判断|结论|回答|关键依据|判断依据|事实依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|优先动作|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒'
+const answerLabels = '核心判断(?:/结论)?|核心结论|判断结论|结论|回答|关键依据|判断依据|事实依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|优先动作|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒'
 type AnswerKind = 'risk' | 'speech' | 'evidence' | 'action' | 'success' | 'conclusion'
 type AnswerBlock = { type: 'section'; label: string; kind: AnswerKind; items: string[] } | { type: 'heading' | 'bullet' | 'paragraph'; text: string }
 
@@ -136,7 +136,7 @@ function AnalysisProgress({ status, seconds, steps, currentStep }: { phase: Thin
 }
 
 function AnalysisComplete({ seconds, evidence, steps }: { seconds: number; evidence: string[]; steps: string[] }) {
-  return <div className="ai-analysis-complete"><header><span><Sparkles size={12} /> 本次分析路径</span><small>{Math.max(seconds, 1)} 秒</small></header><AnalysisTrack steps={steps} currentStep={steps.length} complete /><details><summary><FileSearch size={12} /><span>关键依据</span><p>已折叠，点击查看</p><ChevronRight size={13} /></summary><div><p>以下为支撑判断的业务事实，不包含模型内部推理：</p>{evidence.length > 0 && <ul>{evidence.map((item, index) => <li key={index}>{renderAnswerInline(item)}</li>)}</ul>}</div></details></div>
+  return <div className="ai-analysis-complete"><header><span><Sparkles size={12} /> 本次分析路径</span><small>{Math.max(seconds, 1)} 秒</small></header><AnalysisTrack steps={steps} currentStep={steps.length} complete /><details><summary><FileSearch size={12} /><span>判断依据</span><p>已折叠，点击查看</p><ChevronRight size={13} /></summary><div><p>以下为支撑判断的业务事实，不包含模型内部推理：</p>{evidence.length > 0 && <ul>{evidence.map((item, index) => <li key={index}>{renderAnswerInline(item)}</li>)}</ul>}</div></details></div>
 }
 
 function AnswerSectionIcon({ kind }: { kind: AnswerKind }) {
@@ -147,14 +147,20 @@ function AnswerSectionIcon({ kind }: { kind: AnswerKind }) {
 function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showProcess, steps, currentStep }: { text: string; loading: boolean; status?: string; phase: ThinkingPhase; seconds: number; showProcess: boolean; steps: string[]; currentStep: number }) {
   const [expanded, setExpanded] = useState(false)
   if (!text) return <div className="ai-answer-loading">{loading ? <AnalysisProgress phase={phase} status={status || '正在分析 CRM 字段与关键进展…'} seconds={seconds} steps={steps} currentStep={currentStep} /> : '本次未收到有效回复，请重新提问。'}</div>
-  const blocks = answerBlocks(text)
+  const parsedBlocks = answerBlocks(text)
+  const hasConclusion = parsedBlocks.some(block => block.type === 'section' && block.kind === 'conclusion' && block.items.length > 0)
+  const firstPlainIndex = parsedBlocks.findIndex(block => block.type === 'paragraph' && block.text.trim().length > 0)
+  const blocks: AnswerBlock[] = hasConclusion || firstPlainIndex < 0 || !showProcess ? parsedBlocks : parsedBlocks.map((block, index) => index === firstPlainIndex && block.type === 'paragraph'
+    ? { type: 'section', label: '核心判断', kind: 'conclusion', items: [block.text] }
+    : block)
   const evidence = blocks.filter((block): block is Extract<AnswerBlock, { type: 'section' }> => block.type === 'section' && block.kind === 'evidence').flatMap(block => block.items).slice(0, 3)
   const visibleBlocks = blocks.filter(block => block.type !== 'section' || block.kind !== 'evidence')
+  const firstConclusionIndex = visibleBlocks.findIndex(block => block.type === 'section' && block.kind === 'conclusion' && block.items.length > 0)
   const shouldCollapse = !loading && text.length > 650
   return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} steps={steps} currentStep={currentStep} /> : showProcess && <AnalysisComplete seconds={seconds} evidence={evidence} steps={steps} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{visibleBlocks.map((block, index) => {
     if (block.type === 'heading') return <h4 key={index}>{renderAnswerInline(block.text)}</h4>
-    if (block.type === 'section') return <section className={`ai-answer-section ${block.kind} ${block.label === '核心判断' ? 'primary' : ''}`} key={index}>
-        <header><span><AnswerSectionIcon kind={block.kind} /></span><strong>{block.label}</strong></header>
+    if (block.type === 'section') return <section className={`ai-answer-section ${block.kind} ${block.kind === 'conclusion' && index === firstConclusionIndex ? 'primary' : ''}`} key={index}>
+        <header><span><AnswerSectionIcon kind={block.kind} /></span><strong>{block.kind === 'conclusion' && index === firstConclusionIndex ? '核心判断' : block.label}</strong></header>
         {block.kind === 'action'
           ? <div className="ai-answer-action-grid">{block.items.map((item, itemIndex) => <article key={itemIndex}><i>{itemIndex + 1}</i><p>{renderAnswerInline(item)}</p></article>)}</div>
           : block.kind === 'success'
