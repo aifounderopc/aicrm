@@ -73,7 +73,7 @@ function cleanAnswerInline(value: string) {
     .trim()
 }
 
-const answerLabels = '核心判断|结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒'
+const answerLabels = '核心判断|结论|回答|关键依据|判断依据|事实依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|优先动作|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒'
 type AnswerKind = 'risk' | 'speech' | 'evidence' | 'action' | 'success' | 'conclusion'
 type AnswerBlock = { type: 'section'; label: string; kind: AnswerKind; items: string[] } | { type: 'heading' | 'bullet' | 'paragraph'; text: string }
 

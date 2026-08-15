@@ -384,13 +384,14 @@ export function scheduleSignalProcessing() {
 export async function proxyHarnessStream(prompt: string, sessionId: string, signal: AbortSignal) {
   const candidates = await loadAgentRuntimeConfigs()
   const active = candidates[0]
+  const responseDeadline = AbortSignal.timeout(9_000)
   return fetch(`${config.agentHarnessUrl}/stream`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt, session_id: sessionId, model: active.model, base_url: active.baseUrl,
       api_key: active.apiKey, system_prompt: active.systemPrompt,
       fallback_models: candidates.slice(1).map(item => ({ model: item.model, base_url: item.baseUrl, api_key: item.apiKey })),
-    }), signal,
+    }), signal: AbortSignal.any([signal, responseDeadline]),
   })
 }
 

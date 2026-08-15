@@ -90,7 +90,9 @@ def harness(body: RunInput) -> DeepSeekHarness:
                 "DEEPSEEK_API_KEY": api_key,
                 "DEEPSEEK_BASE_URL": base_url,
             },
-            request_timeout_seconds=240,
+            # Keep the interactive sales-partner path responsive. The API also
+            # enforces a 9-second end-to-end deadline and falls back to CRM rules.
+            request_timeout_seconds=8,
         )
         _harness_signature = signature
     return _harness
