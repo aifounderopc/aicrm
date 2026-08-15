@@ -209,9 +209,13 @@ export async function proxyHarnessStream(prompt: string, sessionId: string, sign
 export function fallbackAnswer(question: string, opportunities: Opportunity[]): string {
   const active = opportunities.filter(item => !['closed', 'released'].includes(item.stage))
   const recent = [...active].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]
+  const stageLabel: Record<OpportunityStage, string> = {
+    reporting: '初接触', contacting: '需求沟通', proposal: '方案确认', negotiation: '报价谈判',
+    signing: '报价谈判', signed: '已签约', delivery: '已交付', closed: '已关闭', released: '已释放',
+  }
   if (!recent) return '当前权限范围内没有可推进的活跃商机。'
   if (/风险|到期|卡住/.test(question)) return `建议先检查「${recent.customerName}」的最新连接器信号和保护期，并补齐下一步责任人与时间点。当前模型服务未配置，以上为 CRM 规则建议。`
-  return `建议优先查看「${recent.customerName}」：当前阶段为 ${recent.stage}，最新需求为“${recent.requirementDescription.slice(0, 80)}”。当前模型服务未配置，以上为 CRM 规则建议。`
+  return `建议优先查看「${recent.customerName}」：当前阶段为${stageLabel[recent.stage]}，最新需求为“${recent.requirementDescription.slice(0, 80)}”。当前模型服务未配置，以上为 CRM 规则建议。`
 }
 
 export function createSessionId(userId: string) {
