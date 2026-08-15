@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, CalendarDays, Check, ChevronRight, CircleCheckBig, Clock3, Copy, Download, FileSearch, ListChecks, MessageCircle, PanelRight, Quote, Send, Sparkles, Target, TriangleAlert, Unlock, X } from 'lucide-react'
 import { useStore } from '../store'
-import { daysUntil } from '../utils'
+import { amountLabel, daysUntil } from '../utils'
 import type { Opportunity } from '../types'
 import { agentApi, integrationApi, type AgentDashboard, type AgentSignal as ApiAgentSignal, type FeishuMessage } from '../api'
 
@@ -69,6 +69,17 @@ function signalTagTone(signal: SalesSignal) {
   if (/风险预警|高风险|阻塞|延期|流失|异常|拒绝|投诉/.test(content)) return 'risk'
   if (/签约|合同已签|完成盖章|成交|赢单|回款|交付完成/.test(content)) return 'success'
   return 'normal'
+}
+
+function suggestionQuickQuery(item: { dimension: string; title: string; reason: string; action: string }) {
+  const content = `${item.dimension} ${item.title} ${item.reason} ${item.action}`
+  if (/保护期|续期|释放/.test(content)) return '帮我判断续期'
+  if (/风险|阻塞|延期/.test(content)) return '帮我化解风险'
+  if (/话术|沟通|邀约|联系/.test(content)) return '帮我生成话术'
+  if (/签约|合同|成交/.test(content)) return '帮我推进签约'
+  if (/资料|字段|联系人|补齐/.test(content)) return '帮我补齐信息'
+  if (/报价|谈判|预算/.test(content)) return '帮我规划谈判'
+  return '帮我制定方案'
 }
 
 function cleanAnswerInline(value: string) {
@@ -207,6 +218,7 @@ export default function SalesPartner() {
   const [thinkingSeconds, setThinkingSeconds] = useState(0)
   const [thinkingSteps, setThinkingSteps] = useState<string[]>([])
   const [thinkingStep, setThinkingStep] = useState(0)
+  const [deferredProcessing, setDeferredProcessing] = useState<string[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合商机进度、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
@@ -570,18 +582,24 @@ export default function SalesPartner() {
         <strong>{item.opp.customerName}</strong><p>{item.reason} · {item.action}</p>
       </button>
     ))
-    if (sideTab === 'processing') return processing.map(item => {
+    if (sideTab === 'processing') return [...processing].sort((a, b) => Number(deferredProcessing.includes(a.opportunityId)) - Number(deferredProcessing.includes(b.opportunityId))).map(item => {
       const isApproval = /保护期/.test(item.reason)
       const taskTitle = isApproval ? '保护期推进判断' : '关键事项待处理'
+      const opportunity = active.find(opp => opp.id === item.opportunityId)
+      const latestProgress = opportunity?.progressReports[0]?.description
+      const deferred = deferredProcessing.includes(item.opportunityId)
       return (
-        <article key={item.opportunityId} className={`ai-side-item processing ${isApproval ? 'approval' : 'handling'}`}>
+        <article key={item.opportunityId} className={`ai-side-item processing ${isApproval ? 'approval' : 'handling'} ${deferred ? 'deferred' : ''}`}>
           <button className="ai-side-card-link" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}>
             <span className="ai-approval-card-head"><strong>{item.customerName}</strong><span><i className={isApproval ? 'approval' : 'handling'}>{isApproval ? '需判断' : '需处理'}</i><em>{item.stage}</em></span></span>
             <span className="ai-approval-subject"><b>{taskTitle}</b></span>
-            <p>{item.reason}</p>
+            <span className="ai-processing-meta"><span><small>金额区间</small><b>{opportunity ? amountLabel(opportunity.amountRange) : '待补充'}</b></span><span><small>销售负责人</small><b>{opportunity?.salesOwnerName || '待明确'}</b></span></span>
+            <span className="ai-processing-detail"><small>待处理</small><p>{item.reason}</p></span>
+            {latestProgress && <span className="ai-processing-detail latest"><small>最新进展</small><p>{latestProgress}</p></span>}
           </button>
           <div className="ai-approval-actions">
-            <button className="handle" onClick={() => void ask(`请分析商机“${item.customerName}”当前为什么需要处理。已知：阶段${item.stage}，健康度${item.score}分，${item.reason}。请给出关键判断、优先动作、负责人建议和时间点。`, `分析「${item.customerName}」的待处理事项`)}>让 AI 分析<ChevronRight size={12} /></button>
+            <button className="later" disabled={deferred} onClick={() => setDeferredProcessing(items => items.includes(item.opportunityId) ? items : [...items, item.opportunityId])}>{deferred ? '已确认' : '确认、稍后'}</button>
+            <button className="handle" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}>去处理<ChevronRight size={12} /></button>
           </div>
         </article>
       )
@@ -614,7 +632,7 @@ export default function SalesPartner() {
               <div className="ai-greeting"><div className="ai-bot-avatar"><img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据基于商机池和已授权连接器实时信号{dashboard && <> · 更新于 {new Date(dashboard.analyzedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 缓存 30 分钟</>}</p></div></div>
               <div className="ai-summary-card"><div className="ai-summary-intro"><p>我已分析当前权限范围内全部商机。当前有 <b>{summary.active}</b> 个活跃商机，<b>{summary.priority}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批/处理</small><strong>{summary.processing}</strong></div><em>待办事项</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{summary.priority}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{summary.stable}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{summary.releasingSoon}</strong></div><em>7 天内</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
-              <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button disabled={isResponding} onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); void ask(item.query, `${item.action}：${item.opp.customerName}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已分析</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
+              <div className="ai-suggestion-grid">{suggestions.map((item, index) => { const quickQuery = suggestionQuickQuery(item); return <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button disabled={isResponding} onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); void ask(item.query, `${quickQuery}：${item.opp.customerName}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已分析</> : <>{quickQuery}<ChevronRight size={14} /></>}</button></article> })}</div>
               {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span>{message.role === 'assistant' ? <FormattedAssistantAnswer text={message.text} loading={isResponding && index === messages.length - 1} status={thinkingStatus} phase={thinkingPhase} seconds={thinkingSeconds} showProcess={index === messages.length - 1 && messages.some(item => item.role === 'user')} steps={thinkingSteps} currentStep={thinkingStep} /> : <p>{message.text}</p>}</div>)}
             </div>
             <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} disabled={isResponding} onClick={() => void ask(q)}>{q}</button>)}</div><div className={`ai-inputbar ${isResponding ? 'responding' : ''}`}><MessageCircle size={18} /><input ref={inputRef} disabled={isResponding} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && void ask()} placeholder={isResponding ? 'AI 销售伙伴正在分析…' : '你有什么商机进展 / 推进问题，都可以问我…'} /><button disabled={isResponding} onClick={() => void ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note"><i className={agentConfigured ? 'online' : 'fallback'} />{agentConfigured ? 'DeepSeek Harness 已连接 · ' : '规则模式 · '}Scale X 仅基于你有权访问的商机与连接器数据提供商机分析和推进支持</div></div>
