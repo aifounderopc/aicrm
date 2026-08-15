@@ -413,5 +413,6 @@ export function fallbackAnswer(question: string, opportunities: Opportunity[]): 
 }
 
 export function createSessionId(userId: string) {
-  return `sales-${userId.replace(/[^a-zA-Z0-9_-]/g, '') || randomUUID()}`
+  const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60) || 'user'
+  return `sales-${safeUserId}-${randomUUID()}`
 }

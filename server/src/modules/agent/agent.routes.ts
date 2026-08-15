@@ -185,15 +185,15 @@ function dashboardScore(item: {
 type SalesQueryIntent = 'prioritize' | 'risk' | 'next_step' | 'message' | 'meeting' | 'compare' | 'status' | 'data_gap' | 'strategy' | 'general'
 
 function understandSalesQuery(message: string, opportunities: Array<{ id: string; customerName: string; companyName: string | null }>) {
-  const intent: SalesQueryIntent = /话术|怎么说|怎么回复|邮件|邀约|沟通文案/.test(message) ? 'message'
+  const intent: SalesQueryIntent = /下一步|怎么推|推进|行动计划/.test(message) ? 'next_step'
+    : /话术|怎么说|怎么回复|邮件|邀约|沟通文案/.test(message) ? 'message'
     : /会议|拜访|沟通准备|议程|提问清单/.test(message) ? 'meeting'
       : /风险|卡住|阻塞|掉单|输单|异议/.test(message) ? 'risk'
         : /优先|先跟|今天跟谁|推荐/.test(message) ? 'prioritize'
           : /对比|比较|哪个|哪几个/.test(message) ? 'compare'
-            : /下一步|怎么推|推进|行动计划/.test(message) ? 'next_step'
-              : /进展|现状|情况|到哪一步/.test(message) ? 'status'
-                : /字段|资料|缺失|补充什么/.test(message) ? 'data_gap'
-                  : /方案|策略|打法|赢单/.test(message) ? 'strategy' : 'general'
+            : /进展|现状|情况|到哪一步/.test(message) ? 'status'
+              : /字段|资料|缺失|补充什么/.test(message) ? 'data_gap'
+                : /方案|策略|打法|赢单/.test(message) ? 'strategy' : 'general'
   const focused = opportunities.filter(item => message.includes(item.customerName) || Boolean(item.companyName && message.includes(item.companyName)))
   const guides: Record<SalesQueryIntent, string> = {
     prioritize: '输出优先顺序、每个排序的差异化依据、今天应完成的动作；不要给所有商机相同建议。',

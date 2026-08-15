@@ -44,11 +44,18 @@ class RunInput(BaseModel):
 
 
 def candidate_inputs(body: RunInput) -> list[RunInput]:
-    candidates = [body]
-    candidates.extend(body.model_copy(update={
-        "session_id": f"{body.session_id}--fallback-{index}"[-160:],
-        "model": item.model, "base_url": item.base_url, "api_key": item.api_key, "fallback_models": [],
-    }) for index, item in enumerate(body.fallback_models, start=1))
+    configured = [ModelCandidate(
+        model=body.model or MODEL,
+        base_url=body.base_url or BASE_URL,
+        api_key=body.api_key or os.getenv("DEEPSEEK_API_KEY", ""),
+    ), *body.fallback_models]
+    candidates: list[RunInput] = []
+    for item in configured:
+        model_session = hashlib.sha256(f"{item.model}|{item.base_url}".encode()).hexdigest()[:10]
+        candidates.append(body.model_copy(update={
+            "session_id": f"{body.session_id[:138]}--model-{model_session}",
+            "model": item.model, "base_url": item.base_url, "api_key": item.api_key, "fallback_models": [],
+        }))
     return candidates
 
 
