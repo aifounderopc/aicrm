@@ -3,11 +3,13 @@ import { useStore } from '../store'
 import { canManageChannels, canManageSales, isAdminRole } from '../utils'
 import type { Opportunity } from '../types'
 
-type Period = 'week' | 'month' | 'quarter'
+type Period = 'week' | 'month' | 'quarter' | 'custom'
+type TrendPeriod = Exclude<Period, 'custom'>
+type CustomPeriodUnit = 'week' | 'month'
 type TeamScope = 'sales' | 'channel'
 type TrendPoint = { label: string; value: number | null; forecastValue?: number; current?: boolean }
 
-const periodNames: Record<Period, string> = { week: '本周', month: '本月', quarter: '本季度' }
+const periodNames: Record<Period, string> = { week: '本周', month: '本月', quarter: '本季度', custom: '自定义' }
 const teamScopeNames: Record<TeamScope, string> = { sales: '销售团队', channel: '渠道伙伴' }
 const industries = ['3C数码', '家电', '美妆个护', '酒水', '食品饮料', '母婴宠物', '汽车', '其他']
 const budgetMidpoint: Record<string, number> = { under5: 3, '5to10': 7.5, '10to20': 15, '20to50': 35, above50: 60 }
@@ -20,23 +22,36 @@ function weekNumber(date: Date) {
   return Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
 }
 
-function periodPointLabel(period: Period, offset: number) {
-  const now = new Date()
+function isoWeekValue(date: Date) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const day = target.getUTCDay() || 7
+  target.setUTCDate(target.getUTCDate() + 4 - day)
+  return `${target.getUTCFullYear()}-W${String(weekNumber(date)).padStart(2, '0')}`
+}
+
+function dateFromIsoWeek(value: string) {
+  const [yearText, weekText] = value.split('-W')
+  const year = Number(yearText), week = Number(weekText)
+  const januaryFourth = new Date(year, 0, 4)
+  const mondayOffset = (januaryFourth.getDay() || 7) - 1
+  return new Date(year, 0, 4 - mondayOffset + (week - 1) * 7)
+}
+
+function periodPointLabel(period: TrendPeriod, offset: number, anchor = new Date()) {
   if (period === 'month') {
-    const date = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    const date = new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1)
     return `${date.getMonth() + 1}月`
   }
   if (period === 'quarter') {
-    const current = now.getFullYear() * 4 + Math.floor(now.getMonth() / 3)
+    const current = anchor.getFullYear() * 4 + Math.floor(anchor.getMonth() / 3)
     const target = current + offset
     return `${Math.floor(target / 4)} Q${(target % 4) + 1}`
   }
-  if (offset === 0) return '本周'
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset * 7)
+  const target = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + offset * 7)
   return `Week ${weekNumber(target)}`
 }
 
-function amountTrend(period: Period, signedAmount: number, pipelineAmount: number): TrendPoint[] {
+function amountTrend(period: TrendPeriod, signedAmount: number, pipelineAmount: number, anchor?: Date): TrendPoint[] {
   const current = Math.max(0, signedAmount)
   const forecastAnchor = current > 0
     ? Math.max(current * 1.08, Math.min(Math.max(pipelineAmount, 0), current * 1.6))
@@ -44,17 +59,17 @@ function amountTrend(period: Period, signedAmount: number, pipelineAmount: numbe
   const actual = [current * .68, current * .78, current * .89, current, null, null, null]
   const forecast = [current * .76, current * .86, current * .97, current * 1.1, forecastAnchor * .82, forecastAnchor * .94, forecastAnchor * 1.06]
   return actual.map((value, index) => ({
-    label: periodPointLabel(period, index - 3),
+    label: periodPointLabel(period, index - 3, anchor),
     value: value === null ? null : Math.round(value * 10) / 10,
     forecastValue: Math.round(forecast[index] * 10) / 10,
     current: index === 3,
   }))
 }
 
-function countTrend(period: Period, signedCount: number): TrendPoint[] {
+function countTrend(period: TrendPeriod, signedCount: number, anchor?: Date): TrendPoint[] {
   const ratios = [.45, .62, .52, .76, .68, .86, 1]
   return ratios.map((ratio, index) => ({
-    label: periodPointLabel(period, index - 6),
+    label: periodPointLabel(period, index - 6, anchor),
     value: Math.max(0, Math.round(signedCount * ratio)),
     current: index === 6,
   }))
@@ -107,9 +122,13 @@ function TrendChart({ points, suffix, variant = 'amount', label }: { points: Tre
 }
 
 export default function Performance() {
-  const { opportunities, currentUser } = useStore()
+  const { opportunities, currentUser, users, channels } = useStore()
   const [period, setPeriod] = useState<Period>('week')
   const [teamScope, setTeamScope] = useState<TeamScope>(() => canManageSales(currentUser.role) ? 'sales' : 'channel')
+  const [teamEntity, setTeamEntity] = useState('all')
+  const [customPeriodUnit, setCustomPeriodUnit] = useState<CustomPeriodUnit>('week')
+  const [customWeek, setCustomWeek] = useState(() => isoWeekValue(new Date()))
+  const [customMonth, setCustomMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const availableTeamScopes = useMemo(() => {
     const scopes: TeamScope[] = []
     if (canManageSales(currentUser.role)) scopes.push('sales')
@@ -117,22 +136,48 @@ export default function Performance() {
     return scopes
   }, [currentUser.role])
   const activeTeamScope = availableTeamScopes.includes(teamScope) ? teamScope : availableTeamScopes[0]
+  const salesTeams = useMemo(() => [...new Set(users.filter(user => user.role === 'sales' && user.group).map(user => user.group!))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [users])
+  const availableEntities = activeTeamScope === 'channel'
+    ? channels.map(channel => ({ value: channel.id, label: channel.name }))
+    : salesTeams.map(group => ({ value: group, label: group }))
+  const activeTeamEntity = teamEntity === 'all' || availableEntities.some(item => item.value === teamEntity) ? teamEntity : 'all'
   const visibleOpportunities = useMemo(() => {
     if (isAdminRole(currentUser.role)) {
-      if (activeTeamScope === 'channel') return opportunities.filter(opportunity => opportunity.source === 'channel')
-      return opportunities.filter(opportunity => opportunity.source === 'direct')
+      if (activeTeamScope === 'channel') {
+        const scoped = opportunities.filter(opportunity => opportunity.source === 'channel')
+        return activeTeamEntity === 'all' ? scoped : scoped.filter(opportunity => opportunity.channelId === activeTeamEntity)
+      }
+      const scoped = opportunities.filter(opportunity => opportunity.source === 'direct')
+      if (activeTeamEntity === 'all') return scoped
+      const ownerIds = new Set(users.filter(user => user.role === 'sales' && user.group === activeTeamEntity).map(user => user.id))
+      return scoped.filter(opportunity => ownerIds.has(opportunity.salesOwnerId))
     }
     if (currentUser.role === 'channel') return opportunities.filter(opportunity => opportunity.channelId === currentUser.channelId)
     return opportunities.filter(opportunity => opportunity.salesOwnerId === currentUser.id)
-  }, [activeTeamScope, opportunities, currentUser])
+  }, [activeTeamEntity, activeTeamScope, opportunities, currentUser, users])
+  const trendPeriod: TrendPeriod = period === 'custom' ? customPeriodUnit : period
+  const customAnchor = customPeriodUnit === 'week' && customWeek
+    ? dateFromIsoWeek(customWeek)
+    : customPeriodUnit === 'month' && customMonth
+      ? new Date(`${customMonth}-01T00:00:00`)
+      : new Date()
+  const trendAnchor = period === 'custom' ? customAnchor : new Date()
+  const selectedPeriodLabel = period !== 'custom'
+    ? periodNames[period]
+    : customPeriodUnit === 'week'
+      ? customWeek ? `${customWeek.slice(0, 4)} 年第 ${Number(customWeek.slice(-2))} 周` : '请选择周'
+      : customMonth ? `${customMonth.slice(0, 4)} 年 ${Number(customMonth.slice(5))} 月` : '请选择月'
+  const selectedScopeLabel = activeTeamEntity === 'all'
+    ? activeTeamScope ? teamScopeNames[activeTeamScope] : ''
+    : availableEntities.find(item => item.value === activeTeamEntity)?.label ?? ''
   const signed = visibleOpportunities.filter(opportunity => ['signed', 'delivery'].includes(opportunity.stage))
   const released = visibleOpportunities.filter(opportunity => opportunity.stage === 'released')
   const active = visibleOpportunities.filter(opportunity => !['released', 'closed'].includes(opportunity.stage))
   const runningCount = Math.max(0, active.length - signed.length)
   const signedAmount = signed.reduce((sum, opportunity) => sum + (opportunity.signedAmount ?? budgetMidpoint[opportunity.amountRange] ?? 0), 0)
   const pipelineAmount = active.filter(opportunity => !['signed', 'delivery'].includes(opportunity.stage)).reduce((sum, opportunity) => sum + (budgetMidpoint[opportunity.amountRange] ?? 0), 0)
-  const amountPoints = amountTrend(period, signedAmount, pipelineAmount)
-  const countPoints = countTrend(period, signed.length)
+  const amountPoints = amountTrend(trendPeriod, signedAmount, pipelineAmount, trendAnchor)
+  const countPoints = countTrend(trendPeriod, signed.length, trendAnchor)
   const amountMom = Math.round((((amountPoints[3].value ?? 0) - (amountPoints[2].value ?? 0)) / Math.max(1, amountPoints[2].value ?? 0)) * 100)
   const countMom = (countPoints[6].value ?? 0) - (countPoints[5].value ?? 0)
   const futurePipeline = amountPoints.slice(4).reduce((sum, point) => sum + (point.forecastValue ?? 0), 0)
@@ -147,22 +192,22 @@ export default function Performance() {
 
   return <div className="performance-page">
     <section className="performance-filter-bar">
-      <div><h1>业绩看板</h1><p>{isAdminRole(currentUser.role) && activeTeamScope ? `${teamScopeNames[activeTeamScope]} · ` : ''}{periodNames[period]} · 签约金额、Pipeline 预测与目标达成趋势</p></div>
+      <div><h1>业绩看板</h1><p>{isAdminRole(currentUser.role) && selectedScopeLabel ? `${selectedScopeLabel} · ` : ''}{selectedPeriodLabel} · 签约金额、Pipeline 预测与目标达成趋势</p></div>
       <div className="performance-filter-controls">
-        {isAdminRole(currentUser.role) && <div className="performance-team-segment" aria-label="业绩统计范围">{availableTeamScopes.map(value => <button key={value} className={activeTeamScope === value ? 'active' : ''} onClick={() => setTeamScope(value)}>{teamScopeNames[value]}</button>)}</div>}
-        <div className="performance-period-segment">{(['week','month','quarter'] as Period[]).map(value => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{periodNames[value]}</button>)}</div>
+        {isAdminRole(currentUser.role) && <div className="performance-team-filter"><div className="performance-team-segment" aria-label="业绩统计范围">{availableTeamScopes.map(value => <button key={value} className={activeTeamScope === value ? 'active' : ''} onClick={() => { setTeamScope(value); setTeamEntity('all') }}>{teamScopeNames[value]}</button>)}</div><select aria-label={activeTeamScope === 'channel' ? '选择渠道伙伴' : '选择销售团队'} value={activeTeamEntity} onChange={event => setTeamEntity(event.target.value)}><option value="all">{activeTeamScope === 'channel' ? '全部渠道伙伴' : '全部销售团队'}</option>{availableEntities.map(item => <option value={item.value} key={item.value}>{item.label}</option>)}</select></div>}
+        <div className="performance-period-filter"><div className="performance-period-segment">{(['week','month','quarter','custom'] as Period[]).map(value => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{periodNames[value]}</button>)}</div>{period === 'custom' && <div className="performance-custom-period"><select aria-label="自定义周期类型" value={customPeriodUnit} onChange={event => setCustomPeriodUnit(event.target.value as CustomPeriodUnit)}><option value="week">周</option><option value="month">月</option></select><input aria-label={customPeriodUnit === 'week' ? '选择周' : '选择月'} type={customPeriodUnit} value={customPeriodUnit === 'week' ? customWeek : customMonth} onChange={event => customPeriodUnit === 'week' ? setCustomWeek(event.target.value) : setCustomMonth(event.target.value)} /></div>}</div>
       </div>
     </section>
 
     <section className="performance-trend-layout">
       <article className="performance-card performance-amount-card">
         <header className="performance-card-head"><div><span>SIGNED REVENUE</span><h2>签约金额</h2><p>历史周期对比实际签约与 Pipeline 预测，未来周期展示当前 Pipeline 预测。</p></div><div className="performance-trend-legend"><span><i className="actual"/>实际签约</span><span><i className="forecast"/>Pipeline 预测</span></div></header>
-        <div className="performance-summary-row"><div className="primary"><span>{periodNames[period]}签约金额</span><strong>{formatWan(amountPoints[3].value ?? 0)}</strong></div><div><span>较上一周期</span><strong className="positive">↗ {amountMom}%</strong></div><div><span>未来 3 期 Pipeline</span><strong>{formatWan(futurePipeline)}</strong></div></div>
+        <div className="performance-summary-row"><div className="primary"><span>{selectedPeriodLabel}签约金额</span><strong>{formatWan(amountPoints[3].value ?? 0)}</strong></div><div><span>较上一周期</span><strong className="positive">↗ {amountMom}%</strong></div><div><span>未来 3 期 Pipeline</span><strong>{formatWan(futurePipeline)}</strong></div></div>
         <TrendChart points={amountPoints} suffix="万" label="签约金额及 Pipeline 预测趋势" />
       </article>
 
       <article className="performance-card performance-progress-card">
-        <header className="performance-card-head"><div><span>TARGET ATTAINMENT</span><h2>签约进度</h2><p>当前签约项目统计，以及过去 6 个周期的签约数量变化。</p></div><em className="performance-period-chip">{periodNames[period]}</em></header>
+        <header className="performance-card-head"><div><span>TARGET ATTAINMENT</span><h2>签约进度</h2><p>当前签约项目统计，以及过去 6 个周期的签约数量变化。</p></div><em className="performance-period-chip">{selectedPeriodLabel}</em></header>
         <div className="performance-count-overview"><div className="performance-count-donut" style={{ '--signed': `${signedShare}%`, '--running': `${runningEnd}%` } as React.CSSProperties}><strong>{signed.length}</strong><span>签约项目</span></div><div className="performance-count-legend"><div><i className="signed"/><span>已签约</span><strong>{signed.length} 个</strong></div><div><i className="running"/><span>进行中</span><strong>{runningCount} 个</strong></div><div><i className="released"/><span>已释放</span><strong>{released.length} 个</strong></div></div></div>
         <div className="performance-progress-head"><div><strong>签约项目数量趋势</strong><span>过去 6 个周期至本周期</span></div><em className={countMom > 0 ? 'positive' : 'neutral'}>{countMom > 0 ? '↗' : '→'} {Math.abs(countMom)} 个</em></div>
         <TrendChart points={countPoints} suffix="个" variant="count" label="签约项目数量过去六周期趋势" />
