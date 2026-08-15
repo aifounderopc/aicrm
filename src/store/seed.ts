@@ -325,7 +325,7 @@ export const seedData: AppState = {
       channelId: 'c_kj', channelName: '科技',
       channelManagerName: '潘子恒',
       saOwnerId: 'ch_kj', saOwnerName: '科技',
-      salesOwnerId: 'ch_kj', salesOwnerName: '科技',
+      salesOwnerId: 'u_yd', salesOwnerName: '李天琦',
       stage: 'signing',
       reportedAt: d(-35), updatedAt: d(-9), releaseAt: d(20),
       lockedPermanently: false,

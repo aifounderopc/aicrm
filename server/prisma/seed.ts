@@ -80,7 +80,6 @@ async function main() {
     { id: 'mock_opp_07', customerName: '雀巢', companyName: '雀巢（中国）有限公司', industry: '食品 / 饮料', stage: 'signing', amountRange: '20to50', department: 'EC', requirement: '雀巢天猫与京东双平台运营合作，合同已进入法务审核阶段。' },
     { id: 'mock_opp_08', customerName: '宝洁（衣清）', companyName: '宝洁（中国）营销有限公司', industry: '家居 / 家装', stage: 'reporting', amountRange: '10to20', department: '衣物清洁', requirement: '宝洁衣清系列电商精细化运营合作，目标为提升转化率与会员复购。' },
     { id: 'mock_opp_09', customerName: '宝洁（SKII）', companyName: '宝洁（中国）营销有限公司', industry: '美妆 / 护肤', stage: 'signed', amountRange: 'above50', department: '高端护肤', requirement: 'SKII 高端护肤品牌数字营销合作，已完成合同签署并进入执行。' },
-    { id: 'mock_opp_10', customerName: '三星（手机）', companyName: '三星（中国）投资有限公司', industry: '3C / 数码', stage: 'signing', amountRange: 'above50', department: '手机事业部', requirement: '三星手机新品上市内容营销与电商运营项目，进入合同确认。' },
     { id: 'mock_opp_11', customerName: '五粮液', companyName: '四川省宜宾五粮液股份有限公司', industry: '酒水', stage: 'reporting', amountRange: '20to50', department: '品牌部', requirement: '五粮液品牌升级与年度内容规划合作，已完成首次高层拜访。' },
     { id: 'mock_opp_12', customerName: '舍得', companyName: '舍得酒业股份有限公司', industry: '酒水', stage: 'reporting', amountRange: '10to20', department: 'EC', requirement: '舍得酒业电商运营项目，客户有明确的线上增长与内容升级需求。' },
     { id: 'mock_opp_13', customerName: '京东大药房', companyName: '京东大药房（青岛）连锁有限公司', industry: '大健康 / 医疗', stage: 'signing', amountRange: '20to50', department: '用户运营', requirement: '京东大药房会员增长与健康服务体验优化项目，已进入商务谈判。' },
