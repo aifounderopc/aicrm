@@ -74,7 +74,7 @@ function cleanAnswerInline(value: string) {
 }
 
 const answerLabels = '核心判断|结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒'
-type AnswerKind = 'risk' | 'speech' | 'evidence' | 'action' | 'conclusion'
+type AnswerKind = 'risk' | 'speech' | 'evidence' | 'action' | 'success' | 'conclusion'
 type AnswerBlock = { type: 'section'; label: string; kind: AnswerKind; items: string[] } | { type: 'heading' | 'bullet' | 'paragraph'; text: string }
 
 function answerLines(text: string) {
@@ -99,7 +99,7 @@ function answerBlocks(text: string): AnswerBlock[] {
     if (heading) { current = null; blocks.push({ type: 'heading', text: heading[1] }); continue }
     const labeled = cleanAnswerInline(line).match(new RegExp(`^(${answerLabels})[：:]\\s*(.*)$`))
     if (labeled) {
-      const kind: AnswerKind = /风险|提醒|注意/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议|成功/.test(labeled[1]) ? 'action' : 'conclusion'
+      const kind: AnswerKind = /成功标准/.test(labeled[1]) ? 'success' : /风险|提醒|注意/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议/.test(labeled[1]) ? 'action' : 'conclusion'
       current = { type: 'section', label: labeled[1], kind, items: [] }
       const inlineItems = labeled[2].match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? []
       current.items.push(...inlineItems)
@@ -131,12 +131,15 @@ function AnalysisProgress({ phase, status, seconds }: { phase: ThinkingPhase; st
   return <div className="ai-analysis-progress"><div>{steps.map((step, index) => <span key={step.id} className={index < current ? 'done' : index === current ? 'active' : ''}><i>{index < current ? '✓' : index + 1}</i>{step.label}</span>)}</div><small>{status} · {seconds} 秒</small></div>
 }
 
-function AnalysisComplete({ seconds }: { seconds: number }) {
-  return <div className="ai-analysis-complete"><Sparkles size={12} /><span>已结合最新 CRM 与商机信号分析</span><small>{Math.max(seconds, 1)} 秒</small></div>
+function AnalysisComplete({ seconds, evidence }: { seconds: number; evidence: string[] }) {
+  return <details className="ai-analysis-complete">
+    <summary><Sparkles size={12} /><span>分析过程</span><p>已核对最新 CRM、推进记录与商机信号</p><small>{Math.max(seconds, 1)} 秒</small><ChevronRight size={13} /></summary>
+    <div><p>以下为支撑本次判断的业务依据，不包含模型内部推理：</p>{evidence.length > 0 && <ul>{evidence.map((item, index) => <li key={index}>{renderAnswerInline(item)}</li>)}</ul>}</div>
+  </details>
 }
 
 function AnswerSectionIcon({ kind }: { kind: AnswerKind }) {
-  const Icon = kind === 'risk' ? TriangleAlert : kind === 'speech' ? Quote : kind === 'evidence' ? FileSearch : kind === 'action' ? ListChecks : Target
+  const Icon = kind === 'risk' ? TriangleAlert : kind === 'speech' ? Quote : kind === 'evidence' ? FileSearch : kind === 'action' ? ListChecks : kind === 'success' ? CircleCheckBig : Target
   return <Icon size={14} />
 }
 
@@ -144,13 +147,17 @@ function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showP
   const [expanded, setExpanded] = useState(false)
   if (!text) return <div className="ai-answer-loading">{loading ? <AnalysisProgress phase={phase} status={status || '正在分析 CRM 字段与关键进展…'} seconds={seconds} /> : '本次未收到有效回复，请重新提问。'}</div>
   const blocks = answerBlocks(text)
+  const evidence = blocks.filter((block): block is Extract<AnswerBlock, { type: 'section' }> => block.type === 'section' && block.kind === 'evidence').flatMap(block => block.items).slice(0, 3)
+  const visibleBlocks = blocks.filter(block => block.type !== 'section' || block.kind !== 'evidence')
   const shouldCollapse = !loading && text.length > 650
-  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} /> : showProcess && <AnalysisComplete seconds={seconds} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{blocks.map((block, index) => {
+  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} /> : showProcess && <AnalysisComplete seconds={seconds} evidence={evidence} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{visibleBlocks.map((block, index) => {
     if (block.type === 'heading') return <h4 key={index}>{renderAnswerInline(block.text)}</h4>
-    if (block.type === 'section') return <section className={`ai-answer-section ${block.kind}`} key={index}>
+    if (block.type === 'section') return <section className={`ai-answer-section ${block.kind} ${block.label === '核心判断' ? 'primary' : ''}`} key={index}>
         <header><span><AnswerSectionIcon kind={block.kind} /></span><strong>{block.label}</strong></header>
         {block.kind === 'action'
           ? <div className="ai-answer-action-grid">{block.items.map((item, itemIndex) => <article key={itemIndex}><i>{itemIndex + 1}</i><p>{renderAnswerInline(item)}</p></article>)}</div>
+          : block.kind === 'success'
+            ? <div className="ai-answer-success"><CircleCheckBig size={16} /><p>{renderAnswerInline(block.items.join('；'))}</p></div>
           : block.kind === 'speech'
             ? <blockquote>{block.items.map((item, itemIndex) => <p key={itemIndex}>{renderAnswerInline(item)}</p>)}</blockquote>
             : <div className="ai-answer-section-copy">{block.items.map((item, itemIndex) => <p key={itemIndex}>{block.kind === 'conclusion' && itemIndex === 0 && <CircleCheckBig size={14} />}{renderAnswerInline(item)}</p>)}</div>}

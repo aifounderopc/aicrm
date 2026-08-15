@@ -198,7 +198,7 @@ function understandSalesQuery(message: string, opportunities: Array<{ id: string
   const guides: Record<SalesQueryIntent, string> = {
     prioritize: '输出优先顺序、每个排序的差异化依据、今天应完成的动作；不要给所有商机相同建议。',
     risk: '先判断风险是否成立，再指出触发证据、影响、缓解方案和需要验证的问题。',
-    next_step: '围绕当前阶段设计 2—4 个连续动作，写清建议负责人、时间点、成功标准和失败后的调整。',
+    next_step: '围绕当前阶段设计 2—3 个连续动作，写清建议负责人和时间点；整个方案只给一个清晰、可验证的成功标准。',
     message: '先明确沟通目标和对象，再给可直接发送的话术；必要时补充客户不同回应下的跟进方式和表达禁区。',
     meeting: '输出会议目标、建议议程、必须问清的问题、材料准备和会后应沉淀的结论。',
     compare: '使用相同维度比较相关商机，明确关键差异与选择建议，不做泛化罗列。',
