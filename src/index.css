@@ -455,6 +455,8 @@ body.ai-partner-open { overflow: hidden; }
 .ai-answer-section p + p { margin-top:6px; }
 .ai-answer-content .ai-answer-bullet { padding:2px 0; }
 .ai-answer-content .ai-answer-expand { width:auto; margin:0 16px 14px auto; padding:7px 12px; border:0; background:#eef7f9; }
+.ai-answer-fallback-note { display:flex; align-items:center; gap:6px; margin-top:9px; padding:7px 2px 0; color:#99a9ad; border-top:1px solid rgba(124,151,157,.14); font-size:9px; line-height:1.45; }
+.ai-answer-fallback-note > i { width:4px; height:4px; flex:0 0 auto; border-radius:50%; background:#b7c4c7; }
 .ai-input-area { padding: 12px 22px 15px; border-top: 1px solid rgba(14,120,150,.08); background: rgba(255,255,255,.55); }
 .ai-quick-questions { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
 .ai-quick-questions button { white-space: nowrap; padding: 5px 9px; }

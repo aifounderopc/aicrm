@@ -147,7 +147,11 @@ function AnswerSectionIcon({ kind }: { kind: AnswerKind }) {
 function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showProcess, steps, currentStep }: { text: string; loading: boolean; status?: string; phase: ThinkingPhase; seconds: number; showProcess: boolean; steps: string[]; currentStep: number }) {
   const [expanded, setExpanded] = useState(false)
   if (!text) return <div className="ai-answer-loading">{loading ? <AnalysisProgress phase={phase} status={status || '正在分析 CRM 字段与关键进展…'} seconds={seconds} steps={steps} currentStep={currentStep} /> : '本次未收到有效回复，请重新提问。'}</div>
-  const parsedBlocks = answerBlocks(text)
+  const fallbackNoticeText = '说明：模型服务当前不可用，本回复由商机数据规则分析生成。'
+  const fallbackNoticeIndex = text.indexOf(fallbackNoticeText)
+  const answerText = fallbackNoticeIndex >= 0 ? text.slice(0, fallbackNoticeIndex).trimEnd() : text
+  const fallbackNotice = fallbackNoticeIndex >= 0 ? fallbackNoticeText : ''
+  const parsedBlocks = answerBlocks(answerText)
   const hasConclusion = parsedBlocks.some(block => block.type === 'section' && block.kind === 'conclusion' && block.items.length > 0)
   const firstPlainIndex = parsedBlocks.findIndex(block => block.type === 'paragraph' && block.text.trim().length > 0)
   const blocks: AnswerBlock[] = hasConclusion || firstPlainIndex < 0 || !showProcess ? parsedBlocks : parsedBlocks.map((block, index) => index === firstPlainIndex && block.type === 'paragraph'
@@ -156,7 +160,7 @@ function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showP
   const evidence = blocks.filter((block): block is Extract<AnswerBlock, { type: 'section' }> => block.type === 'section' && block.kind === 'evidence').flatMap(block => block.items).slice(0, 3)
   const visibleBlocks = blocks.filter(block => block.type !== 'section' || block.kind !== 'evidence')
   const firstConclusionIndex = visibleBlocks.findIndex(block => block.type === 'section' && block.kind === 'conclusion' && block.items.length > 0)
-  const shouldCollapse = !loading && text.length > 650
+  const shouldCollapse = !loading && answerText.length > 650
   return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} steps={steps} currentStep={currentStep} /> : showProcess && <AnalysisComplete seconds={seconds} evidence={evidence} steps={steps} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{visibleBlocks.map((block, index) => {
     if (block.type === 'heading') return <h4 key={index}>{renderAnswerInline(block.text)}</h4>
     if (block.type === 'section') return <section className={`ai-answer-section ${block.kind} ${block.kind === 'conclusion' && index === firstConclusionIndex ? 'primary' : ''}`} key={index}>
@@ -171,7 +175,7 @@ function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showP
       </section>
     if (block.type === 'bullet') return <div className="ai-answer-bullet" key={index}><i /> <span>{renderAnswerInline(block.text)}</span></div>
     return <p key={index}>{renderAnswerInline(block.text)}</p>
-  })}</div>{shouldCollapse && <button type="button" className="ai-answer-expand" onClick={() => setExpanded(value => !value)}>{expanded ? '收起详细内容' : '展开详细分析'}</button>}</div>
+  })}</div>{shouldCollapse && <button type="button" className="ai-answer-expand" onClick={() => setExpanded(value => !value)}>{expanded ? '收起详细内容' : '展开详细分析'}</button>}{fallbackNotice && <div className="ai-answer-fallback-note"><i />{fallbackNotice}</div>}</div>
 }
 
 export default function SalesPartner() {
