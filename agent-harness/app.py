@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parent
 SOUL = (ROOT / "prompts" / "soul.md").read_text(encoding="utf-8")
 HARNESS_PROMPT = (ROOT / "prompts" / "harness.md").read_text(encoding="utf-8")
-SYSTEM_PROMPT = f"{SOUL}\n\n{HARNESS_PROMPT}"
+OPPORTUNITY_DETAIL_MEMORY = (ROOT / "prompts" / "opportunity-detail-memory.md").read_text(encoding="utf-8")
+SYSTEM_PROMPT = f"{SOUL}\n\n{HARNESS_PROMPT}\n\n{OPPORTUNITY_DETAIL_MEMORY}"
 MODEL = os.getenv("DSH_MODEL", "deepseek-v4-flash")
 BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 

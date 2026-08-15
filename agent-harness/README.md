@@ -6,6 +6,7 @@
 
 - `prompts/soul.md`：Agent 身份、表达方式、可信边界与安全原则。
 - `prompts/harness.md`：数据优先级、业务能力边界、飞书结构化协议和回答规范。
+- `prompts/opportunity-detail-memory.md`：对所有商机统一生效的详情字段与推进时间线业务记忆。
 - `cordis.yml`：最小权限 Harness 组合，仅启用 DeepSeek 模型、Agent spine、JSONL 会话持久化和检查点；不启用 shell、文件系统、技能或子 Agent。
 - `app.py`：将 Harness 的 `assistant/chunk` 会话事件转换为 SSE。
 
