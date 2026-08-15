@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, Unlock, X } from 'lucide-react'
 import { useStore } from '../store'
-import { amountLabel, daysUntil } from '../utils'
+import { daysUntil } from '../utils'
 import type { Opportunity } from '../types'
-import { integrationApi, type FeishuMessage } from '../api'
+import { agentApi, integrationApi, type AgentSignal as ApiAgentSignal, type FeishuMessage } from '../api'
 
 type ChatMessage = { role: 'assistant' | 'user'; text: string }
 type SignalChannel = 'all' | 'feishu' | 'email' | 'meeting' | 'jingme'
@@ -57,7 +57,7 @@ function feishuSignalType(content: string) {
 }
 
 export default function SalesPartner() {
-  const { currentUser, opportunities } = useStore()
+  const { currentUser, opportunities, bootstrap } = useStore()
   const navigate = useNavigate()
   const [filter, setFilter] = useState<SignalChannel>('all')
   const [input, setInput] = useState('')
@@ -68,10 +68,16 @@ export default function SalesPartner() {
   const [approvalResults, setApprovalResults] = useState<Record<string, 'confirmed' | 'rejected'>>({})
   const [reportAction, setReportAction] = useState<'copied' | 'exported' | null>(null)
   const [feishuMessages, setFeishuMessages] = useState<FeishuMessage[]>([])
+  const [agentSignals, setAgentSignals] = useState<ApiAgentSignal[]>([])
+  const [agentConfigured, setAgentConfigured] = useState<boolean | null>(null)
+  const [isResponding, setIsResponding] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合 CRM 商机、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
   const inputRef = useRef<HTMLInputElement>(null)
+  const sessionIdRef = useRef<string | undefined>(undefined)
+  const chatAbortRef = useRef<AbortController | undefined>(undefined)
+  const signalIdsRef = useRef(new Set<string>())
 
   useEffect(() => {
     document.body.classList.add('ai-partner-open')
@@ -82,14 +88,25 @@ export default function SalesPartner() {
     let active = true
     const load = async () => {
       try {
-        const items = await integrationApi.feishuMessages(50)
-        if (active) setFeishuMessages(items)
+        const [structured, raw, status] = await Promise.all([
+          agentApi.signals(50).catch(() => []),
+          integrationApi.feishuMessages(50).catch(() => []),
+          agentApi.status().catch(() => null),
+        ])
+        if (active) {
+          const hadNewUpdate = structured.some(signal => signal.opportunityUpdated && !signalIdsRef.current.has(signal.id))
+          signalIdsRef.current = new Set(structured.map(signal => signal.id))
+          setAgentSignals(structured)
+          setFeishuMessages(raw)
+          setAgentConfigured(status?.configured ?? false)
+          if (hadNewUpdate) void bootstrap()
+        }
       } catch { /* 本地演示模式保留 CRM 模拟信号 */ }
     }
     void load()
     const timer = window.setInterval(() => { void load() }, 5_000)
-    return () => { active = false; window.clearInterval(timer) }
-  }, [])
+    return () => { active = false; window.clearInterval(timer); chatAbortRef.current?.abort() }
+  }, [bootstrap])
 
   const visibleOpps = useMemo(() => {
     if (['admin', 'sales_admin'].includes(currentUser.role)) return opportunities
@@ -128,7 +145,7 @@ export default function SalesPartner() {
           : `「${stageText(opp.stage)}」${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
       }
     })
-  const liveFeishuSignals: SalesSignal[] = feishuMessages.map(message => {
+  const rawFeishuSignals: SalesSignal[] = feishuMessages.map(message => {
     const matchedOpportunity = active.find(opp =>
       message.chatName.includes(opp.customerName)
       || message.content.includes(opp.customerName)
@@ -145,6 +162,17 @@ export default function SalesPartner() {
       summary: `${detail.slice(0, 90)}${detail.length > 90 ? '…' : ''}`,
     }
   })
+  const liveFeishuSignals: SalesSignal[] = agentSignals.length
+    ? agentSignals.map(signal => ({
+        id: `agent-${signal.id}`,
+        opportunityId: signal.opportunityId,
+        channel: 'feishu',
+        time: signalTime(signal.time),
+        title: signal.title,
+        tag: signal.tag,
+        summary: signal.summary,
+      }))
+    : rawFeishuSignals
   const signals: SalesSignal[] = [
     ...opportunitySignals.slice(0, featuredSignals.length),
     ...liveFeishuSignals,
@@ -299,24 +327,29 @@ export default function SalesPartner() {
     }, 'image/png')
   }
 
-  const ask = (question = input) => {
+  const ask = async (question = input) => {
     const q = question.trim()
-    if (!q) return
-    const top = ranked[0]
-    const risk = urgent.find(o => !o.lockedPermanently)
-    let answer = '我可以帮你查商机、生成跟进话术、分析风险，也可以基于连接器上下文给出下一步建议。'
-    if (q.includes('优先') || q.includes('今天') || q.includes('跟谁')) {
-      answer = top ? `今天建议优先推进「${top.customerName}」：健康度 ${scoreFor(top)} 分，当前处于${stageText(top.stage)}。建议先确认决策链和下一个明确时间点。` : '当前没有可推进的活跃商机。'
-    } else if (q.includes('话术') || q.includes('消息')) {
-      answer = top ? `可发送：您好，关于「${top.customerName}」的${top.requirementDescription.slice(0, 18)}需求，我们已整理了针对性方案。想邀请您用 30 分钟一起确认范围、时间节点和交付标准，您看哪个时间方便？` : answer
-    } else if (q.includes('风险') || q.includes('到期') || q.includes('卡')) {
-      answer = risk ? `当前最需关注「${risk.customerName}」：保护期剩余 ${Math.max(daysUntil(risk.releaseAt), 0)} 天。请先补充最新进展，再判断是否申请续期。` : '当前没有即将到期的活跃商机。'
-    } else if (q.includes('下一步') || q.includes('怎么推')) {
-      answer = top ? `「${top.customerName}」的下一步：结合${amountLabel(top.amountRange)}的金额预期，先确认决策人、时间节点与交付边界，然后将结论写入进展记录。` : answer
-    }
-    setMessages(items => [...items, { role: 'user', text: q }, { role: 'assistant', text: answer }])
+    if (!q || isResponding) return
+    setMessages(items => [...items, { role: 'user', text: q }, { role: 'assistant', text: '' }])
     setInput('')
-    window.setTimeout(() => inputRef.current?.focus(), 0)
+    setIsResponding(true)
+    const controller = new AbortController()
+    chatAbortRef.current = controller
+    try {
+      await agentApi.streamChat({ message: q, sessionId: sessionIdRef.current }, event => {
+        if (event.type === 'session') sessionIdRef.current = event.sessionId
+        if (event.type === 'delta') {
+          setMessages(items => items.map((item, index) => index === items.length - 1 ? { ...item, text: item.text + event.content } : item))
+        }
+        if (event.type === 'error') throw new Error(event.message)
+      }, controller.signal)
+    } catch {
+      setMessages(items => items.map((item, index) => index === items.length - 1
+        ? { ...item, text: item.text || 'AI 销售伙伴暂时无法响应，请稍后重试。' } : item))
+    } finally {
+      setIsResponding(false)
+      window.setTimeout(() => inputRef.current?.focus(), 0)
+    }
   }
 
   const renderSideList = () => {
@@ -379,9 +412,9 @@ export default function SalesPartner() {
               <div className="ai-summary-card"><div className="ai-summary-intro"><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批/处理</small><strong>{processing.length}</strong></div><em>待办事项</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{releasingSoon.length}</strong></div><em>7 天内</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); if (item.id === 'priority') ask('帮我写跟进话术'); else navigate(`/opportunity/${item.opp.id}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已处理</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
-              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span><p>{message.text}</p></div>)}
+              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span><p>{message.text || (isResponding && index === messages.length - 1 ? '正在分析 CRM 与飞书信号…' : '')}</p></div>)}
             </div>
-            <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} onClick={() => ask(q)}>{q}</button>)}</div><div className="ai-inputbar"><MessageCircle size={18} /><input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && ask()} placeholder="你有什么商机进展 / 推进问题，都可以问我…" /><button onClick={() => ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note">Scale X 仅基于你有权访问的 CRM 与连接器数据提供商机分析和推进支持</div></div>
+            <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} disabled={isResponding} onClick={() => void ask(q)}>{q}</button>)}</div><div className={`ai-inputbar ${isResponding ? 'responding' : ''}`}><MessageCircle size={18} /><input ref={inputRef} disabled={isResponding} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && void ask()} placeholder={isResponding ? 'AI 销售伙伴正在分析…' : '你有什么商机进展 / 推进问题，都可以问我…'} /><button disabled={isResponding} onClick={() => void ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note"><i className={agentConfigured ? 'online' : 'fallback'} />{agentConfigured ? 'DeepSeek Harness 已连接 · ' : '规则模式 · '}Scale X 仅基于你有权访问的 CRM 与连接器数据提供商机分析和推进支持</div></div>
           </div>
         </div>
         {sideOpen && <aside className="ai-detail-side"><div className="ai-side-head"><strong>商机跟进</strong><button onClick={() => setSideOpen(false)} aria-label="关闭侧边栏"><X size={15} /></button></div><div className="ai-side-tabs"><button className={sideTab === 'processing' ? 'active' : ''} onClick={() => setSideTab('processing')}><span>需审批/处理</span><b>{processing.length}</b></button><button className={sideTab === 'stable' ? 'active' : ''} onClick={() => setSideTab('stable')}><span>顺利推进中</span><b>{stable.length}</b></button><button className={sideTab === 'suggestions' ? 'active' : ''} onClick={() => setSideTab('suggestions')}><span>今日处理建议</span><b>{suggestions.length}</b></button></div><div className="ai-side-list">{renderSideList()}</div></aside>}

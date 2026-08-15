@@ -17,4 +17,5 @@ export const config = {
   isProd: process.env.NODE_ENV === 'production',
   feishuAppId: process.env.FEISHU_APP_ID,
   feishuAppSecret: process.env.FEISHU_APP_SECRET,
+  agentHarnessUrl: process.env.AGENT_HARNESS_URL ?? 'http://agent-harness:8090',
 }

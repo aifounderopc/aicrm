@@ -285,7 +285,17 @@ export default function OpportunityDetail() {
   const signedTimelineItem = opp.signedDate && typeof opp.signedAmount === 'number'
     ? [{ id: 'signed-update', at: opp.signedDate, title: '签约信息已确认', body: `签约金额 ${formatSignedAmount(opp.signedAmount)} 万元，签约时间 ${formatDate(opp.signedDate)}${opp.contractNo ? `，合同编号 ${opp.contractNo}` : ''}${opp.contractFileId ? '，已上传签约凭证' : ''}。`, type: 'manual', label: '销售更新' }]
     : []
-  const progressTimelineItems = progressReports.map(item => ({ id: item.id, at: item.createdAt, title: `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`, body: item.description, type: item.status === 'blocked' ? 'risk' : 'manual', label: '销售更新' }))
+  const progressTimelineItems = progressReports.map(item => {
+    const fromAgent = item.reporterId === 'ai-sales-partner'
+    return {
+      id: item.id,
+      at: item.createdAt,
+      title: fromAgent ? 'AI 销售伙伴 · 连接器信号同步' : `商机进度更新 · ${statusMeta[item.status]?.label || '推进更新'}`,
+      body: item.description,
+      type: fromAgent ? 'ai' : item.status === 'blocked' ? 'risk' : 'manual',
+      label: fromAgent ? 'AI 信号' : '销售更新',
+    }
+  })
   const salesTimelineItems = [...signedTimelineItem, ...progressTimelineItems, ...(!signedTimelineItem.length && !progressTimelineItems.length ? [{ id: 'stage-update', at: opp.updatedAt, title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
   const timelineItems = [
     ...salesTimelineItems,

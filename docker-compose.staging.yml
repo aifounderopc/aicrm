@@ -34,9 +34,23 @@ services:
       SEED_ON_START: ${SEED_ON_START:-false}
       FEISHU_APP_ID: ${FEISHU_APP_ID:-}
       FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      AGENT_HARNESS_URL: http://agent-harness:8090
       NODE_ENV: production
     expose:
       - "3000"
+
+  agent-harness:
+    build: ./agent-harness
+    restart: always
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DSH_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      DSH_SESSION_ROOT: /app/.sessions
+    volumes:
+      - harness_sessions_staging:/app/.sessions
+    expose:
+      - "8090"
 
   web:
     build: .
@@ -48,3 +62,4 @@ services:
 
 volumes:
   pgdata_staging:
+  harness_sessions_staging:

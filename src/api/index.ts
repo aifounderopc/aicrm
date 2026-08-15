@@ -20,3 +20,5 @@ export type { LogQuery } from './logs'
 
 export { integrationApi } from './integrations'
 export type { FeishuConnectionStatus, FeishuMessage } from './integrations'
+export { agentApi } from './agent'
+export type { AgentSignal, AgentStatus, AgentStreamEvent } from './agent'

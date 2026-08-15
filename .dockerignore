@@ -1,6 +1,7 @@
 node_modules
 dist
 server
+agent-harness
 .git
 *.log
 .env

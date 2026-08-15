@@ -134,6 +134,7 @@ model Opportunity {
   evidenceFiles   EvidenceFile[]
   progressReports ProgressReport[]
   renewalRequests RenewalRequest[]
+  salesSignals    SalesSignal[]
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -265,8 +266,32 @@ model FeishuMessage {
   contentText String   @map("content_text")
   createdAt   DateTime @map("created_at")
   receivedAt  DateTime @default(now()) @map("received_at")
+  salesSignal SalesSignal?
 
   @@index([createdAt])
   @@index([chatId])
   @@map("feishu_messages")
+}
+
+// AI 销售伙伴将连接器原始消息结构化后的信号。source_message_id 保证处理幂等。
+model SalesSignal {
+  id                 String        @id @default(cuid())
+  source             String        @default("feishu")
+  sourceMessageId    String        @unique @map("source_message_id")
+  sourceMessage      FeishuMessage @relation(fields: [sourceMessageId], references: [id], onDelete: Cascade)
+  opportunityId      String?       @map("opportunity_id")
+  opportunity        Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  signalType         String        @map("signal_type")
+  title              String
+  summary            String
+  confidence         Float         @default(0)
+  extractedData      Json          @map("extracted_data")
+  processingSource   String        @default("rules") @map("processing_source")
+  opportunityUpdated Boolean       @default(false) @map("opportunity_updated")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  processedAt        DateTime      @default(now()) @map("processed_at")
+
+  @@index([createdAt])
+  @@index([opportunityId])
+  @@map("sales_signals")
 }

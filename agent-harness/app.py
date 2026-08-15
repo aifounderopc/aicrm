@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import json
+import os
+import queue
+import threading
+from pathlib import Path
+from typing import Any, Iterator
+
+from deepseek_harness import DeepSeekHarness
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+ROOT = Path(__file__).resolve().parent
+SOUL = (ROOT / "prompts" / "soul.md").read_text(encoding="utf-8")
+HARNESS_PROMPT = (ROOT / "prompts" / "harness.md").read_text(encoding="utf-8")
+SYSTEM_PROMPT = f"{SOUL}\n\n{HARNESS_PROMPT}"
+MODEL = os.getenv("DSH_MODEL", "deepseek-v4-flash")
+HAS_API_KEY = bool(os.getenv("DEEPSEEK_API_KEY"))
+
+app = FastAPI(title="Scale X AI Sales Partner Harness", version="0.1.0")
+_lock = threading.Lock()
+_harness: DeepSeekHarness | None = None
+
+
+class RunInput(BaseModel):
+    prompt: str = Field(min_length=1, max_length=120_000)
+    session_id: str = Field(min_length=1, max_length=160)
+
+
+def harness() -> DeepSeekHarness:
+    global _harness
+    if not HAS_API_KEY:
+        raise HTTPException(status_code=503, detail="DEEPSEEK_API_KEY is not configured")
+    if _harness is None:
+        _harness = DeepSeekHarness(
+            provider="deepseek-official",
+            model=MODEL,
+            max_tokens=8192,
+            cwd=str(ROOT),
+            cordis=str(ROOT / "cordis.yml"),
+            session_root=str(ROOT / ".sessions"),
+            env={"DSH_SYSTEM_PROMPT": SYSTEM_PROMPT, "DSH_MODEL": MODEL},
+            request_timeout_seconds=240,
+        )
+    return _harness
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    if _harness is not None:
+        _harness.close()
+
+
+@app.get("/health")
+def health() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "configured": HAS_API_KEY,
+        "framework": "deepseek-harness",
+        "sdkVersion": "0.1.0rc6",
+        "model": MODEL,
+    }
+
+
+@app.post("/run")
+def run_agent(body: RunInput) -> dict[str, Any]:
+    with _lock:
+        result = harness().run(body.prompt, session_id=body.session_id)
+    return {
+        "sessionId": result.session_id,
+        "content": result.final_response,
+        "finishReason": result.finish_reason,
+    }
+
+
+def sse(payload: dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@app.post("/stream")
+def stream_agent(body: RunInput) -> StreamingResponse:
+    events: queue.Queue[dict[str, Any] | None] = queue.Queue()
+
+    def worker() -> None:
+        emitted = False
+
+        def on_notification(notification: Any) -> None:
+            nonlocal emitted
+            if notification.method != "session.event":
+                return
+            event = notification.payload.get("event")
+            if not isinstance(event, dict) or event.get("type") != "assistant/chunk":
+                return
+            data = event.get("data")
+            chunk = data.get("chunk") if isinstance(data, dict) else None
+            if isinstance(chunk, dict) and chunk.get("type") == "text-delta":
+                text = chunk.get("text")
+                if isinstance(text, str) and text:
+                    emitted = True
+                    events.put({"type": "delta", "content": text})
+
+        try:
+            with _lock:
+                result = harness().run(body.prompt, session_id=body.session_id, on_notification=on_notification)
+            if not emitted and result.final_response:
+                events.put({"type": "delta", "content": result.final_response})
+            events.put({"type": "done", "sessionId": result.session_id, "finishReason": result.finish_reason})
+        except Exception as exc:  # runtime/network errors become a typed SSE event
+            events.put({"type": "error", "message": str(exc)[:500]})
+        finally:
+            events.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    def iterator() -> Iterator[str]:
+        yield sse({"type": "session", "sessionId": body.session_id})
+        while True:
+            item = events.get()
+            if item is None:
+                break
+            yield sse(item)
+
+    return StreamingResponse(iterator(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})

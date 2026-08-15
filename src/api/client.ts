@@ -37,6 +37,10 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   return url.toString()
 }
 
+export function buildApiUrl(path: string): string {
+  return buildUrl(path)
+}
+
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, query, signal } = opts
   let res: Response
