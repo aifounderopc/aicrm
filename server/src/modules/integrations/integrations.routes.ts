@@ -18,6 +18,59 @@ const configSchema = z.object({
   appSecret: z.string().trim().max(240).optional(),
 })
 
+const draftImProviders = ['wecom', 'dingtalk', 'jingme'] as const
+const draftImProviderSchema = z.enum(draftImProviders)
+const draftImConfigSchema = z.object({
+  appId: z.string().trim().min(2, '请输入有效的应用标识').max(120),
+  appSecret: z.string().trim().max(240).optional(),
+})
+const draftImNames: Record<(typeof draftImProviders)[number], string> = {
+  wecom: '企微', dingtalk: '钉钉', jingme: '京 Me',
+}
+
+integrationRouter.get('/im/:provider', ah(async (req, res) => {
+  const provider = draftImProviderSchema.parse(req.params.provider)
+  const connection = await prisma.integrationConnection.findUnique({ where: { provider } })
+  res.json({
+    provider,
+    configured: Boolean(connection),
+    appId: connection?.appId ?? '',
+    hasSecret: Boolean(connection?.encryptedAppSecret),
+    status: connection ? 'configured' : 'not_configured',
+    updatedAt: connection?.updatedAt ?? null,
+  })
+}))
+
+integrationRouter.put('/im/:provider', requireRole(isAdminRole), ah(async (req, res) => {
+  const auth = req.auth!
+  const provider = draftImProviderSchema.parse(req.params.provider)
+  const input = draftImConfigSchema.parse(req.body)
+  const existing = await prisma.integrationConnection.findUnique({ where: { provider } })
+  const appSecret = input.appSecret || (existing ? decryptField(existing.encryptedAppSecret) : '')
+  if (!appSecret) throw new ApiError(400, `请输入${draftImNames[provider]}应用密钥`)
+
+  const connection = await prisma.integrationConnection.upsert({
+    where: { provider },
+    create: {
+      provider, appId: input.appId, encryptedAppSecret: encryptField(appSecret),
+      status: 'configured', updatedBy: auth.user.id,
+    },
+    update: {
+      appId: input.appId, encryptedAppSecret: encryptField(appSecret), status: 'configured',
+      lastError: null, updatedBy: auth.user.id,
+    },
+  })
+  await writeLog(req, {
+    actorId: auth.user.id,
+    actorName: auth.user.name,
+    action: `配置${draftImNames[provider]}连接器`,
+    detail: `${draftImNames[provider]}应用 ${input.appId} 的配置已安全保存，等待 SDK 接入`,
+    targetType: 'integration',
+    targetId: connection.id,
+  })
+  res.json({ provider, configured: true, appId: connection.appId, hasSecret: true, status: 'configured', updatedAt: connection.updatedAt })
+}))
+
 integrationRouter.get('/feishu', ah(async (_req, res) => {
   const [connection, messageCount, latest] = await Promise.all([
     prisma.integrationConnection.findUnique({ where: { provider: 'feishu' } }),

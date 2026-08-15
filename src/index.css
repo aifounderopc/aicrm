@@ -626,6 +626,7 @@ body.ai-partner-open { overflow: hidden; }
 .connector-state { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .connector-status, .sync-status { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 12px; font-size: 8.5px; font-weight: 700; }
 .connector-status.connected { color: #047857; background: #ecfdf5; }
+.connector-status.configured { color:#0b7188; background:#e8f7fa; }
 .connector-status.not_connected { color: #a16207; background: #fef9c3; }
 .connector-status.disabled, .sync-status.paused { color: #64748b; background: #f1f5f9; }
 .sync-status.healthy { color: #047857; background: #ecfdf5; }
@@ -710,8 +711,16 @@ body.ai-partner-open { overflow: hidden; }
 .feishu-credential-footer i.connected { background: #12ad75; box-shadow: 0 0 0 4px rgba(18,173,117,.12); }
 .feishu-credential-footer i.connecting, .feishu-credential-footer i.reconnecting { background: #3370ff; box-shadow: 0 0 0 4px rgba(51,112,255,.12); }
 .feishu-credential-footer i.failed { background: #e34a45; box-shadow: 0 0 0 4px rgba(227,74,69,.12); }
+.feishu-credential-footer i.configured { background:#0d93aa; box-shadow:0 0 0 4px rgba(13,147,170,.12); }
 .feishu-save-button { min-width: 148px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 13px; color: white; border: 0; border-radius: 10px; background: linear-gradient(135deg,#3370ff,#2459cf); box-shadow: 0 7px 16px rgba(51,112,255,.2); font-size: 10px; font-weight: 780; cursor: pointer; }
 .feishu-save-button:disabled { opacity: .58; cursor: wait; }
+.connector-config-notice { display:grid; grid-template-columns:14px auto minmax(0,1fr); gap:6px; align-items:center; margin-top:11px; padding:8px 10px; color:#52737b; border-radius:9px; background:rgba(14,145,168,.07); font-size:9px; }
+.connector-config-notice svg { color:#0d91aa; }
+.connector-config-notice span { color:#17677a; font-weight:800; }
+.connector-config-notice p { margin:0; color:#769097; text-align:right; }
+.connector-credential-wecom { border-color:rgba(42,174,103,.2); }.connector-credential-wecom .feishu-credential-heading > span { color:#168a50; }.connector-credential-wecom .feishu-save-button { background:linear-gradient(135deg,#2aae67,#168b56); box-shadow:0 7px 16px rgba(42,174,103,.18); }
+.connector-credential-dingtalk { border-color:rgba(22,119,255,.2); }.connector-credential-dingtalk .feishu-credential-heading > span { color:#1266d5; }.connector-credential-dingtalk .feishu-save-button { background:linear-gradient(135deg,#1677ff,#1261cf); box-shadow:0 7px 16px rgba(22,119,255,.18); }
+.connector-credential-jingme { border-color:rgba(225,37,27,.18); }.connector-credential-jingme .feishu-credential-heading > span { color:#b62920; }.connector-credential-jingme .feishu-save-button { background:linear-gradient(135deg,#e34a3f,#ba291f); box-shadow:0 7px 16px rgba(225,37,27,.16); }
 
 .connector-wizard-backdrop { position: fixed; z-index: 550; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(8,35,44,.42); backdrop-filter: blur(7px); }
 .connector-wizard-modal { width: min(1020px,100%); max-height: min(820px,calc(100dvh - 48px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(255,255,255,.94); border-radius: 24px; background: #f7fbfc; box-shadow: 0 28px 80px rgba(8,45,58,.3); animation: ai-modal-in .2s ease; }
@@ -768,10 +777,17 @@ body.ai-partner-open { overflow: hidden; }
 .connector-wizard-channel-grid small { color: #8aa1a7; font-size: 8px; }
 .connector-wizard-channel-grid article > div > b { color: #a16207; font-size: 8.5px; }
 .connector-wizard-channel-grid article.connected > div > b { color: #047857; }
+.connector-wizard-channel-grid article.configured > div > b { color:#0b7188; }
+.connector-wizard-channel-grid article.selected { box-shadow:0 0 0 2px rgba(14,135,158,.2),0 8px 20px rgba(26,99,119,.08); }
 .connector-wizard-channel-grid p { min-height: 42px; margin: 10px 0; color: #789098; font-size: 9px; line-height: 1.5; }
 .connector-wizard-channel-grid button { padding: 7px 10px; border-radius: 8px; font-size: 9px; font-weight: 700; cursor: pointer; }
 .connector-wizard-channel-grid button.primary { color: white; border: 0; background: #0b7188; }
 .connector-wizard-channel-grid button.secondary { color: #326571; border: 1px solid rgba(14,120,150,.13); background: #f7fbfc; }
+.connector-wizard-channel-step { display:flex; flex-direction:column; gap:14px; }
+.connector-wizard-inline-config { padding:12px; border:1px solid rgba(14,120,150,.1); border-radius:15px; background:rgba(255,255,255,.64); }
+.connector-wizard-inline-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; color:#365f69; font-size:10px; font-weight:750; }
+.connector-wizard-inline-head button { display:flex; align-items:center; gap:4px; padding:5px 7px; color:#6a858c; border:0; border-radius:7px; background:#eef5f6; cursor:pointer; font-size:9px; }
+.connector-wizard-inline-config .connector-credential-panel.compact { margin-top:0; box-shadow:none; }
 .connector-test-run textarea { width: 100%; min-height: 120px; box-sizing: border-box; padding: 13px; color: #315c66; border: 1px solid rgba(14,120,150,.14); border-radius: 12px; background: white; outline: none; resize: vertical; }
 .connector-test-run > button { display: inline-flex; align-items: center; gap: 6px; margin-top: 11px; padding: 9px 13px; color: white; border: 0; background: #0b7188; border-radius: 9px; font-size: 10px; font-weight: 700; cursor: pointer; }
 .connector-test-run > span { margin-left: 9px; color: #78949b; font-size: 9px; }
