@@ -74,6 +74,8 @@ function cleanAnswerInline(value: string) {
 }
 
 const answerLabels = '核心判断|结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒'
+type AnswerKind = 'risk' | 'speech' | 'evidence' | 'action' | 'conclusion'
+type AnswerBlock = { type: 'section'; label: string; kind: AnswerKind; items: string[] } | { type: 'heading' | 'bullet' | 'paragraph'; text: string }
 
 function answerLines(text: string) {
   const normalized = text
@@ -85,6 +87,31 @@ function answerLines(text: string) {
     if (!line || line.length <= 96 || new RegExp(`^(${answerLabels})[：:]`).test(cleanAnswerInline(line)) || /^(?:[-*•]|\d+[.)、])/.test(line)) return [line]
     return line.match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? [line]
   })
+}
+
+function answerBlocks(text: string): AnswerBlock[] {
+  const blocks: AnswerBlock[] = []
+  let current: Extract<AnswerBlock, { type: 'section' }> | null = null
+  for (const raw of answerLines(text)) {
+    const line = raw.trim()
+    if (!line || /^\|?\s*:?-{3,}/.test(line)) continue
+    const heading = line.match(/^#{1,6}\s+(.+)/)
+    if (heading) { current = null; blocks.push({ type: 'heading', text: heading[1] }); continue }
+    const labeled = cleanAnswerInline(line).match(new RegExp(`^(${answerLabels})[：:]\\s*(.*)$`))
+    if (labeled) {
+      const kind: AnswerKind = /风险|提醒|注意/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议|成功/.test(labeled[1]) ? 'action' : 'conclusion'
+      current = { type: 'section', label: labeled[1], kind, items: [] }
+      const inlineItems = labeled[2].match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? []
+      current.items.push(...inlineItems)
+      blocks.push(current)
+      continue
+    }
+    const bullet = line.match(/^(?:[-*•]|\d+[.)、])\s*(.+)$/)
+    const content = bullet?.[1] ?? (line.includes('|') ? line.split('|').map(cleanAnswerInline).filter(Boolean).join(' · ') : line)
+    if (current) { current.items.push(content); continue }
+    blocks.push({ type: bullet ? 'bullet' : 'paragraph', text: content })
+  }
+  return blocks
 }
 
 function renderAnswerInline(value: string) {
@@ -108,7 +135,7 @@ function AnalysisComplete({ seconds }: { seconds: number }) {
   return <div className="ai-analysis-complete"><Sparkles size={12} /><span>已结合最新 CRM 与商机信号分析</span><small>{Math.max(seconds, 1)} 秒</small></div>
 }
 
-function AnswerSectionIcon({ kind }: { kind: 'risk' | 'speech' | 'evidence' | 'action' | 'conclusion' }) {
+function AnswerSectionIcon({ kind }: { kind: AnswerKind }) {
   const Icon = kind === 'risk' ? TriangleAlert : kind === 'speech' ? Quote : kind === 'evidence' ? FileSearch : kind === 'action' ? ListChecks : Target
   return <Icon size={14} />
 }
@@ -116,33 +143,20 @@ function AnswerSectionIcon({ kind }: { kind: 'risk' | 'speech' | 'evidence' | 'a
 function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showProcess }: { text: string; loading: boolean; status?: string; phase: ThinkingPhase; seconds: number; showProcess: boolean }) {
   const [expanded, setExpanded] = useState(false)
   if (!text) return <div className="ai-answer-loading">{loading ? <AnalysisProgress phase={phase} status={status || '正在分析 CRM 字段与关键进展…'} seconds={seconds} /> : '本次未收到有效回复，请重新提问。'}</div>
-  const lines = answerLines(text)
+  const blocks = answerBlocks(text)
   const shouldCollapse = !loading && text.length > 650
-  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} /> : showProcess && <AnalysisComplete seconds={seconds} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{lines.map((raw, index) => {
-    const line = raw.trim()
-    if (!line || /^\|?\s*:?-{3,}/.test(line)) return null
-    const heading = line.match(/^#{1,6}\s+(.+)/)
-    if (heading) return <h4 key={index}>{renderAnswerInline(heading[1])}</h4>
-    const labeled = cleanAnswerInline(line).match(/^(核心判断|结论|回答|关键依据|关键进展|风险提醒|风险判断|赢单机会|优先建议|为什么现在|推进方案|行动计划|立即行动|下一步(?:行动|建议)?|建议|沟通目标|可直接发送的话术|建议话术|备选回应|会议目标|建议议程|需要确认|成功标准|注意事项|使用提醒)[：:]\s*(.*)$/)
-    if (labeled) {
-      const kind = /风险|提醒|注意/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议|成功/.test(labeled[1]) ? 'action' : 'conclusion'
-      const paragraphs = labeled[2].match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? []
-      return <section className={`ai-answer-section ${kind}`} key={index}>
-        <header><span><AnswerSectionIcon kind={kind} /></span><strong>{labeled[1]}</strong></header>
-        {kind === 'action'
-          ? <div className="ai-answer-action-grid">{paragraphs.map((paragraph, paragraphIndex) => <article key={paragraphIndex}><i>{paragraphIndex + 1}</i><p>{renderAnswerInline(paragraph)}</p></article>)}</div>
-          : kind === 'speech'
-            ? <blockquote>{paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex}>{renderAnswerInline(paragraph)}</p>)}</blockquote>
-            : <div className="ai-answer-section-copy">{paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex}>{kind === 'conclusion' && paragraphIndex === 0 && <CircleCheckBig size={14} />}{renderAnswerInline(paragraph)}</p>)}</div>}
+  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} /> : showProcess && <AnalysisComplete seconds={seconds} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{blocks.map((block, index) => {
+    if (block.type === 'heading') return <h4 key={index}>{renderAnswerInline(block.text)}</h4>
+    if (block.type === 'section') return <section className={`ai-answer-section ${block.kind}`} key={index}>
+        <header><span><AnswerSectionIcon kind={block.kind} /></span><strong>{block.label}</strong></header>
+        {block.kind === 'action'
+          ? <div className="ai-answer-action-grid">{block.items.map((item, itemIndex) => <article key={itemIndex}><i>{itemIndex + 1}</i><p>{renderAnswerInline(item)}</p></article>)}</div>
+          : block.kind === 'speech'
+            ? <blockquote>{block.items.map((item, itemIndex) => <p key={itemIndex}>{renderAnswerInline(item)}</p>)}</blockquote>
+            : <div className="ai-answer-section-copy">{block.items.map((item, itemIndex) => <p key={itemIndex}>{block.kind === 'conclusion' && itemIndex === 0 && <CircleCheckBig size={14} />}{renderAnswerInline(item)}</p>)}</div>}
       </section>
-    }
-    const bullet = line.match(/^(?:[-*•]|\d+[.)、])\s*(.+)$/)
-    if (bullet) return <div className="ai-answer-bullet" key={index}><i /> <span>{renderAnswerInline(bullet[1])}</span></div>
-    if (line.includes('|')) {
-      const cells = line.split('|').map(cleanAnswerInline).filter(Boolean)
-      return cells.length ? <div className="ai-answer-bullet" key={index}><i /><span>{cells.join(' · ')}</span></div> : null
-    }
-    return <p key={index}>{renderAnswerInline(line)}</p>
+    if (block.type === 'bullet') return <div className="ai-answer-bullet" key={index}><i /> <span>{renderAnswerInline(block.text)}</span></div>
+    return <p key={index}>{renderAnswerInline(block.text)}</p>
   })}</div>{shouldCollapse && <button type="button" className="ai-answer-expand" onClick={() => setExpanded(value => !value)}>{expanded ? '收起详细内容' : '展开详细分析'}</button>}</div>
 }
 
