@@ -345,10 +345,32 @@ export default function SalesPartner() {
     : rawFeishuSignals
   const liveOpportunityIds = new Set(liveFeishuSignals.map(signal => signal.opportunityId).filter(Boolean))
   const fallbackSignals = opportunitySignals.filter(signal => !signal.opportunityId || !liveOpportunityIds.has(signal.opportunityId))
-  const signals: SalesSignal[] = (agentSignalsLoaded
-    ? liveFeishuSignals
-    : liveFeishuSignals.length ? [...liveFeishuSignals, ...fallbackSignals] : opportunitySignals
-  ).slice(0, 50)
+  const baseSignals: SalesSignal[] = liveFeishuSignals.length
+    ? [...liveFeishuSignals, ...fallbackSignals]
+    : opportunitySignals
+  const jingmeSignalTemplates = [
+    { tag: '需求确认', summary: '京 Me 项目群中，客户确认需补充核心使用场景，并邀请产品负责人参加下一轮方案评审。', ageMinutes: 185 },
+    { tag: '需求更新', summary: '京 Me 内部协同消息显示，客户希望会前补充目标用户样本结构与招募口径。', ageMinutes: 390 },
+    { tag: '方案反馈', summary: '京 Me 项目群反馈客户已完成首轮方案阅读，正在协调业务与采购共同确认评审排期。', ageMinutes: 760 },
+  ]
+  const jingmeSignals: SalesSignal[] = active
+    .filter(opp => opp.salesOwnerId === 'u_zn' || opp.saOwnerId === 'u_zn' || opp.salesOwnerName === '周宁' || opp.saOwnerName === '周宁')
+    .slice(0, 3)
+    .map((opp, index) => ({
+      id: `jingme-zhou-ning-${opp.id}`,
+      opportunityId: opp.id,
+      channel: 'jingme',
+      time: signalTime(new Date(Date.now() - jingmeSignalTemplates[index].ageMinutes * 60_000).toISOString()),
+      title: `${opp.customerName}项目协同群`,
+      tag: jingmeSignalTemplates[index].tag,
+      summary: jingmeSignalTemplates[index].summary,
+    }))
+  const signalsWithJingme = [...baseSignals]
+  ;[4, 6, 8].forEach((position, index) => {
+    const signal = jingmeSignals[index]
+    if (signal) signalsWithJingme.splice(Math.min(position, signalsWithJingme.length), 0, signal)
+  })
+  const signals: SalesSignal[] = signalsWithJingme.slice(0, 50)
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
 
   const fallbackSuggestions = [
@@ -643,7 +665,7 @@ export default function SalesPartner() {
   return (
     <div className={`ai-partner-page ${sideOpen ? 'with-side' : ''}`}>
       <aside className="ai-signal-panel glass-panel">
-        <div className="ai-panel-title"><span className="ai-kicker"><Sparkles size={14} /> 商机实时信号</span><b>{visibleSignals.length} 条</b></div>
+        <div className="ai-panel-title"><span className="ai-kicker"><Sparkles size={14} /> 商机上下文（实时信号）</span><b>{visibleSignals.length} 条</b></div>
         <div className="ai-filter-row">{(['all', 'jingme', 'feishu', 'email', 'meeting'] as SignalChannel[]).map(id => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{id === 'all' ? '全部' : channelMeta[id].label}</button>)}</div>
         <div className="ai-signal-list">
           {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; const tagTone = signalTagTone(item); return <button key={item.id} className={`ai-signal-item ${item.opportunityId ? '' : 'source-only'}`} onClick={() => item.opportunityId && navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span className={tagTone}>{item.tag}</span>{item.sourceCount && item.sourceCount > 1 ? <small>汇总 {item.sourceCount} 条</small> : null}</div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">暂无与商机推进相关的新信号</div>}
