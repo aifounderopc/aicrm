@@ -384,14 +384,13 @@ export function scheduleSignalProcessing() {
 export async function proxyHarnessStream(prompt: string, sessionId: string, signal: AbortSignal) {
   const candidates = await loadAgentRuntimeConfigs()
   const active = candidates[0]
-  const responseDeadline = AbortSignal.timeout(9_000)
   return fetch(`${config.agentHarnessUrl}/stream`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt, session_id: sessionId, model: active.model, base_url: active.baseUrl,
       api_key: active.apiKey, system_prompt: active.systemPrompt,
       fallback_models: candidates.slice(1).map(item => ({ model: item.model, base_url: item.baseUrl, api_key: item.apiKey })),
-    }), signal: AbortSignal.any([signal, responseDeadline]),
+    }), signal,
   })
 }
 
@@ -409,8 +408,8 @@ export function fallbackAnswer(question: string, opportunities: Opportunity[]): 
     signing: '报价谈判', signed: '已签约', delivery: '已交付', closed: '已关闭', released: '已释放',
   }
   if (!recent) return '当前权限范围内没有可推进的活跃商机。'
-  if (/风险|到期|卡住/.test(question)) return `建议先检查「${recent.customerName}」的最新连接器信号和保护期，并补齐下一步责任人与时间点。当前模型服务未配置，以上为 CRM 规则建议。`
-  return `建议优先查看「${recent.customerName}」：当前阶段为${stageLabel[recent.stage]}，最新需求为“${recent.requirementDescription.slice(0, 80)}”。当前模型服务未配置，以上为 CRM 规则建议。`
+  if (/风险|到期|卡住/.test(question)) return `建议先检查「${recent.customerName}」的最新连接器信号和保护期，并补齐下一步责任人与时间点。说明：模型服务当前不可用，本回复由商机数据规则分析生成。`
+  return `建议优先查看「${recent.customerName}」：当前阶段为${stageLabel[recent.stage]}，最新需求为“${recent.requirementDescription.slice(0, 80)}”。说明：模型服务当前不可用，本回复由商机数据规则分析生成。`
 }
 
 export function createSessionId(userId: string) {

@@ -521,6 +521,21 @@ async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
   let buffer = ''
   let deliveredText = false
   let completed = false
+  const firstOutputDeadline = Date.now() + 9_500
+  const readNext = async () => {
+    if (deliveredText) return reader.read()
+    const remaining = firstOutputDeadline - Date.now()
+    if (remaining <= 0) throw new Error('Agent first output timeout')
+    let timer: NodeJS.Timeout | undefined
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Agent first output timeout')), remaining) }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
   const relayFrame = (frame: string) => {
     const data = frame.split('\n').find(line => line.startsWith('data: '))?.slice(6)
     if (!data) return
@@ -533,7 +548,7 @@ async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
   }
   try {
     while (true) {
-      const { value, done } = await reader.read()
+      const { value, done } = await readNext()
       buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n')
       const frames = buffer.split('\n\n')
       buffer = frames.pop() ?? ''
@@ -695,7 +710,7 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
     }
   }
   const latest = opportunity.progressReports[0]?.description || opportunity.salesSignals[0]?.summary
-  const fallback = `结论：${opportunity.customerName}当前处于${stageLabels[opportunity.stage]}阶段，健康度 ${healthScore} 分。\n\n关键依据：${latest || '当前尚无有效推进记录或连接器信号。'}\n\n下一步：${opportunity.progressReports.some(item => item.needsSupport) ? '优先处理已标记的阻塞事项，并明确负责人和完成时间。' : '围绕最新客户反馈确认下一步责任人、动作和时间点，并及时沉淀推进记录。'}（模型暂不可用，以上为 CRM 规则分析）`
+  const fallback = `结论：${opportunity.customerName}当前处于${stageLabels[opportunity.stage]}阶段，健康度 ${healthScore} 分。\n\n关键依据：${latest || '当前尚无有效推进记录或连接器信号。'}\n\n下一步：${opportunity.progressReports.some(item => item.needsSupport) ? '优先处理已标记的阻塞事项，并明确负责人和完成时间。' : '围绕最新客户反馈确认下一步责任人、动作和时间点，并及时沉淀推进记录。'}\n\n说明：模型服务当前不可用，本回复由商机数据规则分析生成。`
   streamFallback(res, sessionId, fallback, false)
 }))
 
@@ -812,7 +827,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
     } else {
       answer = `回答：结合当前授权上下文，与问题最相关的是“${focus.item.customerName}”，当前处于${dashboardStageLabel[focus.item.stage]}阶段。\n\n当前可确认：${latest.slice(0, 120)}。${!focus.item.lockedPermanently && focus.remainingDays <= 7 ? `保护期仅剩 ${Math.max(focus.remainingDays, 0)} 天。` : ''}\n\n建议：围绕你本次问题先确认缺失的关键事实；如果需要我继续生成话术、会议提纲或逐步推进方案，可以直接点明期望产出。`
     }
-    answer += '\n\n说明：模型服务当前不可用，本回复由授权 CRM 数据规则分析生成。'
+    answer += '\n\n说明：模型服务当前不可用，本回复由商机数据规则分析生成。'
   }
   for (const content of answer.match(/.{1,8}/gu) ?? [answer]) {
     res.write(`data: ${JSON.stringify({ type: 'delta', content })}\n\n`)
