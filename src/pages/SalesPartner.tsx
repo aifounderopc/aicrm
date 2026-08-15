@@ -149,8 +149,18 @@ function AnalysisTrack({ steps, currentStep, complete = false }: { steps: string
   })}</div>
 }
 
-function AnalysisProgress({ status, seconds, steps, currentStep }: { phase: ThinkingPhase; status: string; seconds: number; steps: string[]; currentStep: number }) {
-  return <div className="ai-analysis-progress"><header><div><span><Sparkles size={12} /> 本次任务规划</span><p className="ai-analysis-live-status"><i />{status}</p></div><small>{seconds} 秒</small></header><AnalysisTrack steps={steps} currentStep={currentStep} /></div>
+function AnalysisProgress({ phase, status, seconds, steps, currentStep }: { phase: ThinkingPhase; status: string; seconds: number; steps: string[]; currentStep: number }) {
+  const lastStep = Math.max(steps.length - 1, 0)
+  const inferredStep = phase === 'reading' ? 0 : phase === 'writing' ? lastStep : Math.min(lastStep, Math.floor(seconds / 4))
+  const visibleStep = Math.max(Math.min(currentStep, lastStep), inferredStep)
+  const activeTask = steps[visibleStep]
+  const liveStatuses = activeTask
+    ? [status, `正在围绕“${activeTask}”核对关键信息…`, `正在整理“${activeTask}”的可执行结果…`]
+    : [status]
+  const statusIndex = Math.floor(seconds / 3) % liveStatuses.length
+  const liveStatus = liveStatuses[statusIndex] || status
+
+  return <div className="ai-analysis-progress"><header><div><span><Sparkles size={12} /> 本次任务规划</span><p className="ai-analysis-live-status" key={`${visibleStep}-${statusIndex}`} aria-live="polite"><i />{liveStatus}</p></div><small>{seconds} 秒</small></header><AnalysisTrack steps={steps} currentStep={visibleStep} /></div>
 }
 
 function AnalysisComplete({ seconds, evidence, steps }: { seconds: number; evidence: string[]; steps: string[] }) {
@@ -189,7 +199,7 @@ function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showP
             ? <div className="ai-answer-success"><CircleCheckBig size={16} /><p>{renderAnswerInline(block.items.join('；'))}</p></div>
           : block.kind === 'speech'
             ? <blockquote>{block.items.map((item, itemIndex) => <p key={itemIndex}>{renderAnswerInline(item)}</p>)}</blockquote>
-            : <div className="ai-answer-section-copy">{block.items.map((item, itemIndex) => <p key={itemIndex}>{block.kind === 'conclusion' && itemIndex === 0 && <CircleCheckBig size={14} />}{renderAnswerInline(item)}</p>)}</div>}
+            : <div className="ai-answer-section-copy">{block.items.map((item, itemIndex) => <p key={itemIndex}>{block.kind === 'conclusion' && itemIndex === 0 && <CircleCheckBig size={14} />}<span>{renderAnswerInline(item)}</span></p>)}</div>}
       </section>
     if (block.type === 'bullet') return <div className="ai-answer-bullet" key={index}><i /> <span>{renderAnswerInline(block.text)}</span></div>
     return <p key={index}>{renderAnswerInline(block.text)}</p>
