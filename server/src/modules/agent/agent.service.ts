@@ -25,14 +25,19 @@ type SignalExtraction = {
 }
 
 type HarnessRun = { sessionId: string; content: string; finishReason?: string }
-const SIGNAL_PROCESSING_VERSION = 4
+const SIGNAL_PROCESSING_VERSION = 5
+
+function redactSensitiveText(value: string | null): string | null {
+  return value?.replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3') ?? null
+}
 
 function extractionForStorage(extraction: SignalExtraction): Prisma.InputJsonValue {
   return {
     ...extraction,
-    contactPhone: extraction.contactPhone
-      ? extraction.contactPhone.replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3')
-      : null,
+    summary: redactSensitiveText(extraction.summary),
+    requirementDescription: redactSensitiveText(extraction.requirementDescription),
+    progressSummary: redactSensitiveText(extraction.progressSummary),
+    contactPhone: redactSensitiveText(extraction.contactPhone),
   } as unknown as Prisma.InputJsonValue
 }
 
@@ -229,7 +234,7 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
         opportunityId: opportunity?.id,
         signalType: extraction.signalType,
         title: opportunity?.customerName ?? message.chatName,
-        summary: extraction.summary,
+        summary: redactSensitiveText(extraction.summary) ?? '',
         confidence: extraction.confidence,
         extractedData: extractionForStorage(extraction),
         processingSource: source,
@@ -239,7 +244,7 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
       },
       update: {
         opportunityId: opportunity?.id, signalType: extraction.signalType,
-        title: opportunity?.customerName ?? message.chatName, summary: extraction.summary,
+        title: opportunity?.customerName ?? message.chatName, summary: redactSensitiveText(extraction.summary) ?? '',
         confidence: extraction.confidence, extractedData: extractionForStorage(extraction),
         processingSource: source, processingVersion: SIGNAL_PROCESSING_VERSION,
         opportunityUpdated: shouldUpdate && hasPotentialUpdate,
