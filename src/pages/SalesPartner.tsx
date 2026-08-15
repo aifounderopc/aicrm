@@ -208,7 +208,7 @@ export default function SalesPartner() {
   const [thinkingSteps, setThinkingSteps] = useState<string[]>([])
   const [thinkingStep, setThinkingStep] = useState(0)
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', text: '我会结合 CRM 商机、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
+    { role: 'assistant', text: '我会结合商机进度、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
   const inputRef = useRef<HTMLInputElement>(null)
   const sessionIdRef = useRef<string | undefined>(undefined)
