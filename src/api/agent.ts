@@ -60,7 +60,7 @@ export type AgentConfigurationInput = AgentPromptLayers & {
 
 export type AgentStreamEvent =
   | { type: 'session'; sessionId: string }
-  | { type: 'progress'; stage: 'reading' | 'reasoning' | 'writing'; label: string }
+  | { type: 'progress'; stage: 'reading' | 'reasoning' | 'writing'; label: string; steps?: string[]; currentStep?: number }
   | { type: 'delta'; content: string }
   | { type: 'done'; sessionId: string; fallback?: boolean }
   | { type: 'error'; message: string }

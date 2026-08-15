@@ -216,17 +216,17 @@ function understandSalesQuery(message: string, opportunities: Array<{ id: string
 }
 
 function salesProgressPlan(intent: SalesQueryIntent, focused: boolean) {
-  const plans: Record<SalesQueryIntent, { analyze: string; compose: string }> = {
-    prioritize: { analyze: '正在比较商机阶段、近期变化、风险与保护期…', compose: '正在形成差异化优先顺序和今日动作…' },
-    risk: { analyze: '正在核对风险信号、影响范围与尚未确认事项…', compose: '正在整理风险优先级和可执行缓解方案…' },
-    next_step: { analyze: '正在梳理当前阶段、阻塞点与动作依赖…', compose: '正在编排推进顺序、负责人和完成标志…' },
-    message: { analyze: '正在确认沟通对象、目标与表达边界…', compose: '正在生成适配当前客户阶段的沟通内容…' },
-    meeting: { analyze: '正在核对会议目标、参与角色与待决问题…', compose: '正在组织议程、提问重点和会后产出…' },
-    compare: { analyze: '正在按统一维度比较相关商机的关键差异…', compose: '正在形成取舍判断和对应推进建议…' },
-    status: { analyze: '正在核对最近的有效变化与当前阶段事实…', compose: '正在提炼当前状态、未决事项和关键下一步…' },
-    data_gap: { analyze: '正在区分影响判断的关键缺口与普通缺失项…', compose: '正在整理补充顺序、获取方式和具体用途…' },
-    strategy: { analyze: '正在结合客户目标、当前阶段和已有证据选择打法…', compose: '正在形成适配当前商机的推进策略…' },
-    general: { analyze: focused ? '正在围绕指定商机识别本次问题的关键事实…' : '正在识别当前问题涉及的商机与目标…', compose: '正在选择最适合本次问题的回答结构…' },
+  const plans: Record<SalesQueryIntent, { analyze: string; compose: string; steps: [string, string, string] }> = {
+    prioritize: { analyze: '正在比较商机阶段、近期变化、风险与保护期…', compose: '正在形成差异化优先顺序和今日动作…', steps: ['建立比较维度', '评估推进价值', '形成优先顺序'] },
+    risk: { analyze: '正在核对风险信号、影响范围与尚未确认事项…', compose: '正在整理风险优先级和可执行缓解方案…', steps: ['核验风险信号', '判断影响边界', '设计缓解动作'] },
+    next_step: { analyze: '正在梳理当前阶段、阻塞点与动作依赖…', compose: '正在编排推进顺序、负责人和完成标志…', steps: ['定位当前阻塞', '编排推进动作', '定义完成标志'] },
+    message: { analyze: '正在确认沟通对象、目标与表达边界…', compose: '正在生成适配当前客户阶段的沟通内容…', steps: ['确认沟通目标', '选择表达策略', '生成可用话术'] },
+    meeting: { analyze: '正在核对会议目标、参与角色与待决问题…', compose: '正在组织议程、提问重点和会后产出…', steps: ['明确会议目标', '梳理待决问题', '组织议程产出'] },
+    compare: { analyze: '正在按统一维度比较相关商机的关键差异…', compose: '正在形成取舍判断和对应推进建议…', steps: ['统一比较口径', '识别关键差异', '形成取舍建议'] },
+    status: { analyze: '正在核对最近的有效变化与当前阶段事实…', compose: '正在提炼当前状态、未决事项和关键下一步…', steps: ['核对最新变化', '判断当前阶段', '提炼关键下一步'] },
+    data_gap: { analyze: '正在区分影响判断的关键缺口与普通缺失项…', compose: '正在整理补充顺序、获取方式和具体用途…', steps: ['识别关键缺口', '判断业务影响', '安排补充顺序'] },
+    strategy: { analyze: '正在结合客户目标、当前阶段和已有证据选择打法…', compose: '正在形成适配当前商机的推进策略…', steps: ['识别客户目标', '匹配推进打法', '形成执行策略'] },
+    general: { analyze: focused ? '正在围绕指定商机识别本次问题的关键事实…' : '正在识别当前问题涉及的商机与目标…', compose: '正在选择最适合本次问题的回答结构…', steps: ['识别问题目标', '选择分析路径', '组织针对性回答'] },
   }
   return plans[intent]
 }
@@ -683,12 +683,12 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
   res.write(`data: ${JSON.stringify({ type: 'session', sessionId })}\n\n`)
-  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: taskPlan.analyze })}\n\n`)
+  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: taskPlan.analyze, steps: taskPlan.steps, currentStep: 0 })}\n\n`)
 
   let upstream: Response | undefined
   try { upstream = await proxyHarnessStream(prompt, sessionId, controller.signal) } catch { /* 使用规则回退 */ }
   if (upstream?.ok && upstream.body) {
-    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose })}\n\n`)
+    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose, steps: taskPlan.steps, currentStep: 2 })}\n\n`)
     if (await relayHarnessStream(upstream, res)) {
       res.end()
       return
@@ -762,7 +762,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
   res.write(`data: ${JSON.stringify({ type: 'session', sessionId })}\n\n`)
-  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: taskPlan.analyze })}\n\n`)
+  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: taskPlan.analyze, steps: taskPlan.steps, currentStep: 0 })}\n\n`)
 
   let upstream: Response | undefined
   try {
@@ -770,7 +770,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
   } catch { /* 使用下面的规则回退 */ }
 
   if (upstream?.ok && upstream.body) {
-    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose })}\n\n`)
+    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose, steps: taskPlan.steps, currentStep: 2 })}\n\n`)
     if (await relayHarnessStream(upstream, res)) {
       res.end()
       return

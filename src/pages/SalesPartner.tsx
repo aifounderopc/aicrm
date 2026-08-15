@@ -80,11 +80,11 @@ type AnswerBlock = { type: 'section'; label: string; kind: AnswerKind; items: st
 function answerLines(text: string) {
   const normalized = text
     .replace(/```[\s\S]*?```/g, block => block.replace(/```\w*/g, '').replace(/```/g, ''))
-    .replace(new RegExp(`\\s*(?=(${answerLabels})[：:])`, 'g'), '\n')
+    .replace(new RegExp(`\\s*(?=(${answerLabels})(?:[：:]|\\s*$))`, 'g'), '\n')
     .replace(/([。！？；])\s*(?=(?:[-*•]|\d+[.)、]))/g, '$1\n')
   return normalized.split('\n').flatMap(raw => {
     const line = raw.trim()
-    if (!line || line.length <= 96 || new RegExp(`^(${answerLabels})[：:]`).test(cleanAnswerInline(line)) || /^(?:[-*•]|\d+[.)、])/.test(line)) return [line]
+    if (!line || line.length <= 96 || new RegExp(`^(${answerLabels})(?:[：:]|$)`).test(cleanAnswerInline(line)) || /^(?:[-*•]|\d+[.)、])/.test(line)) return [line]
     return line.match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? [line]
   })
 }
@@ -97,11 +97,11 @@ function answerBlocks(text: string): AnswerBlock[] {
     if (!line || /^\|?\s*:?-{3,}/.test(line)) continue
     const heading = line.match(/^#{1,6}\s+(.+)/)
     if (heading) { current = null; blocks.push({ type: 'heading', text: heading[1] }); continue }
-    const labeled = cleanAnswerInline(line).match(new RegExp(`^(${answerLabels})[：:]\\s*(.*)$`))
+    const labeled = cleanAnswerInline(line).match(new RegExp(`^(${answerLabels})(?:[：:]\\s*(.*))?$`))
     if (labeled) {
       const kind: AnswerKind = /成功标准/.test(labeled[1]) ? 'success' : /风险|提醒|注意/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议/.test(labeled[1]) ? 'action' : 'conclusion'
       current = { type: 'section', label: labeled[1], kind, items: [] }
-      const inlineItems = labeled[2].match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? []
+      const inlineItems = (labeled[2] || '').match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? []
       current.items.push(...inlineItems)
       blocks.push(current)
       continue
@@ -123,15 +123,20 @@ function renderAnswerInline(value: string) {
   })
 }
 
-function AnalysisProgress({ status, seconds }: { phase: ThinkingPhase; status: string; seconds: number }) {
-  return <div className="ai-analysis-progress"><i /><div><strong>正在处理当前任务</strong><p>{status}</p></div><small>{seconds} 秒</small></div>
+function AnalysisTrack({ steps, currentStep, complete = false }: { steps: string[]; currentStep: number; complete?: boolean }) {
+  if (!steps.length) return null
+  return <div className={`ai-analysis-track ${complete ? 'complete' : ''}`}>{steps.slice(0, 3).map((step, index) => {
+    const state = complete || index < currentStep ? 'done' : index === currentStep ? 'active' : 'pending'
+    return <div className={state} key={step}><i>{state === 'done' ? <Check size={11} /> : index + 1}</i><span>{step}</span></div>
+  })}</div>
 }
 
-function AnalysisComplete({ seconds, evidence }: { seconds: number; evidence: string[] }) {
-  return <details className="ai-analysis-complete">
-    <summary><Sparkles size={12} /><span>本次分析依据</span><p>点击查看已核对的业务信息</p><small>{Math.max(seconds, 1)} 秒</small><ChevronRight size={13} /></summary>
-    <div><p>以下是支撑本次判断的业务事实，不包含模型内部推理：</p>{evidence.length > 0 && <ul>{evidence.map((item, index) => <li key={index}>{renderAnswerInline(item)}</li>)}</ul>}</div>
-  </details>
+function AnalysisProgress({ status, seconds, steps, currentStep }: { phase: ThinkingPhase; status: string; seconds: number; steps: string[]; currentStep: number }) {
+  return <div className="ai-analysis-progress"><header><span><Sparkles size={12} /> 本次任务规划</span><small>{seconds} 秒</small></header><AnalysisTrack steps={steps} currentStep={currentStep} /><p>{status}</p></div>
+}
+
+function AnalysisComplete({ seconds, evidence, steps }: { seconds: number; evidence: string[]; steps: string[] }) {
+  return <div className="ai-analysis-complete"><header><span><Sparkles size={12} /> 本次分析路径</span><small>{Math.max(seconds, 1)} 秒</small></header><AnalysisTrack steps={steps} currentStep={steps.length} complete /><details><summary><FileSearch size={12} /><span>关键依据</span><p>已折叠，点击查看</p><ChevronRight size={13} /></summary><div><p>以下为支撑判断的业务事实，不包含模型内部推理：</p>{evidence.length > 0 && <ul>{evidence.map((item, index) => <li key={index}>{renderAnswerInline(item)}</li>)}</ul>}</div></details></div>
 }
 
 function AnswerSectionIcon({ kind }: { kind: AnswerKind }) {
@@ -139,14 +144,14 @@ function AnswerSectionIcon({ kind }: { kind: AnswerKind }) {
   return <Icon size={14} />
 }
 
-function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showProcess }: { text: string; loading: boolean; status?: string; phase: ThinkingPhase; seconds: number; showProcess: boolean }) {
+function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showProcess, steps, currentStep }: { text: string; loading: boolean; status?: string; phase: ThinkingPhase; seconds: number; showProcess: boolean; steps: string[]; currentStep: number }) {
   const [expanded, setExpanded] = useState(false)
-  if (!text) return <div className="ai-answer-loading">{loading ? <AnalysisProgress phase={phase} status={status || '正在分析 CRM 字段与关键进展…'} seconds={seconds} /> : '本次未收到有效回复，请重新提问。'}</div>
+  if (!text) return <div className="ai-answer-loading">{loading ? <AnalysisProgress phase={phase} status={status || '正在分析 CRM 字段与关键进展…'} seconds={seconds} steps={steps} currentStep={currentStep} /> : '本次未收到有效回复，请重新提问。'}</div>
   const blocks = answerBlocks(text)
   const evidence = blocks.filter((block): block is Extract<AnswerBlock, { type: 'section' }> => block.type === 'section' && block.kind === 'evidence').flatMap(block => block.items).slice(0, 3)
   const visibleBlocks = blocks.filter(block => block.type !== 'section' || block.kind !== 'evidence')
   const shouldCollapse = !loading && text.length > 650
-  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} /> : showProcess && <AnalysisComplete seconds={seconds} evidence={evidence} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{visibleBlocks.map((block, index) => {
+  return <div className="ai-answer-content">{loading ? <AnalysisProgress phase={phase} status={status || '正在生成推进建议…'} seconds={seconds} steps={steps} currentStep={currentStep} /> : showProcess && <AnalysisComplete seconds={seconds} evidence={evidence} steps={steps} />}<div className={`ai-answer-body ${shouldCollapse && !expanded ? 'compact' : ''}`}>{visibleBlocks.map((block, index) => {
     if (block.type === 'heading') return <h4 key={index}>{renderAnswerInline(block.text)}</h4>
     if (block.type === 'section') return <section className={`ai-answer-section ${block.kind} ${block.label === '核心判断' ? 'primary' : ''}`} key={index}>
         <header><span><AnswerSectionIcon kind={block.kind} /></span><strong>{block.label}</strong></header>
@@ -183,6 +188,8 @@ export default function SalesPartner() {
   const [thinkingStatus, setThinkingStatus] = useState('')
   const [thinkingPhase, setThinkingPhase] = useState<ThinkingPhase>('reading')
   const [thinkingSeconds, setThinkingSeconds] = useState(0)
+  const [thinkingSteps, setThinkingSteps] = useState<string[]>([])
+  const [thinkingStep, setThinkingStep] = useState(0)
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合 CRM 商机、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
@@ -476,6 +483,8 @@ export default function SalesPartner() {
     setThinkingStatus('正在读取全部商机和最新信号…')
     setThinkingPhase('reading')
     setThinkingSeconds(0)
+    setThinkingSteps([])
+    setThinkingStep(0)
     const controller = new AbortController()
     chatAbortRef.current = controller
     let receivedText = false
@@ -490,6 +499,8 @@ export default function SalesPartner() {
         if (event.type === 'progress') {
           setThinkingPhase(event.stage)
           setThinkingStatus(event.label)
+          if (event.steps?.length) setThinkingSteps(event.steps)
+          if (typeof event.currentStep === 'number') setThinkingStep(event.currentStep)
         }
         if (event.type === 'delta') {
           receivedText = receivedText || Boolean(event.content)
@@ -587,7 +598,7 @@ export default function SalesPartner() {
               <div className="ai-summary-card"><div className="ai-summary-intro"><p>我已分析当前权限范围内全部商机。当前有 <b>{summary.active}</b> 个活跃商机，<b>{summary.priority}</b> 个需重点推进项。{dashboard && <small>更新于 {new Date(dashboard.analyzedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 缓存 30 分钟</small>}</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批/处理</small><strong>{summary.processing}</strong></div><em>待办事项</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{summary.priority}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{summary.stable}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{summary.releasingSoon}</strong></div><em>7 天内</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button disabled={isResponding} onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); void ask(item.query, `${item.action}：${item.opp.customerName}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已分析</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
-              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span>{message.role === 'assistant' ? <FormattedAssistantAnswer text={message.text} loading={isResponding && index === messages.length - 1} status={thinkingStatus} phase={thinkingPhase} seconds={thinkingSeconds} showProcess={index === messages.length - 1 && messages.some(item => item.role === 'user')} /> : <p>{message.text}</p>}</div>)}
+              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span>{message.role === 'assistant' ? <FormattedAssistantAnswer text={message.text} loading={isResponding && index === messages.length - 1} status={thinkingStatus} phase={thinkingPhase} seconds={thinkingSeconds} showProcess={index === messages.length - 1 && messages.some(item => item.role === 'user')} steps={thinkingSteps} currentStep={thinkingStep} /> : <p>{message.text}</p>}</div>)}
             </div>
             <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} disabled={isResponding} onClick={() => void ask(q)}>{q}</button>)}</div><div className={`ai-inputbar ${isResponding ? 'responding' : ''}`}><MessageCircle size={18} /><input ref={inputRef} disabled={isResponding} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && void ask()} placeholder={isResponding ? 'AI 销售伙伴正在分析…' : '你有什么商机进展 / 推进问题，都可以问我…'} /><button disabled={isResponding} onClick={() => void ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note"><i className={agentConfigured ? 'online' : 'fallback'} />{agentConfigured ? 'DeepSeek Harness 已连接 · ' : '规则模式 · '}Scale X 仅基于你有权访问的 CRM 与连接器数据提供商机分析和推进支持</div></div>
           </div>
