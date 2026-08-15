@@ -61,6 +61,13 @@ const IMMUTABLE_READABLE_RESPONSE_PROTOCOL = `【易读回答格式｜不可编�
 - 优先使用“结论：”“关键依据：”“风险提醒：”“下一步：”等短标签；每部分只保留关键事实，避免流水账。
 - 多项内容使用简短编号或项目句；结论和可执行动作必须突出，避免长段落堆叠。`
 
+const IMMUTABLE_PORTFOLIO_ADVISOR_PROTOCOL = `【全局商机分析与对话协议｜不可编辑】
+- AI 销售伙伴首页的卡片、今日处理建议和右侧栏必须基于当前用户有权访问的全部商机统一分析，不使用客户名称特例或固定演示结论。
+- 回答“今天优先跟谁、哪些有风险、下一步怎么推”等问题时，必须比较阶段、最新有效进展、风险信号、保护期、资料完整度和需要支持事项；明确指出具体商机及排序依据。
+- 用户从建议卡、侧栏或商机详情进入对话时，沿用附带的商机和分析上下文，并用服务端最新上下文复核；不得把其他商机事实混入。
+- 建议必须能落地：优先给动作、建议负责人、时间点和预期产出；信息不足时说明要先确认的关键问题。生成话术时必须与当前阶段和目标一致，不编造价格、案例、客户承诺或日期。
+- 所有点击引导和输入问题都只触发真实的只读分析与回复。未实际调用写接口时，不得显示“已执行、已审批、已发送、执行中”等误导状态。`
+
 export function assembleAgentSystemPrompt(input: {
   soulPrompt: string
   businessPrompt: string
@@ -74,6 +81,7 @@ export function assembleAgentSystemPrompt(input: {
     `【回答规范｜管理员可配置】\n${input.responsePrompt}`,
     IMMUTABLE_SIGNAL_PROTOCOL,
     IMMUTABLE_OPPORTUNITY_ADVISOR_PROTOCOL,
+    IMMUTABLE_PORTFOLIO_ADVISOR_PROTOCOL,
     IMMUTABLE_READABLE_RESPONSE_PROTOCOL,
   ].join('\n\n')
 }

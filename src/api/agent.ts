@@ -85,6 +85,16 @@ export type OpportunityInspection = {
   latestSignalAt: string | null
 }
 
+export type AgentDashboard = {
+  analyzedAt: string
+  cacheExpiresAt: string
+  cacheHit: boolean
+  summary: { active: number; processing: number; priority: number; stable: number; releasingSoon: number }
+  suggestions: Array<{ id: string; dimension: string; title: string; opportunityId: string; customerName: string; reason: string; action: string; query: string }>
+  processing: Array<{ opportunityId: string; customerName: string; stage: string; score: number; reason: string }>
+  stable: Array<{ opportunityId: string; customerName: string; stage: string; score: number; reason: string }>
+}
+
 async function streamFrom(
   path: string,
   input: { message: string; sessionId?: string },
@@ -115,6 +125,7 @@ async function streamFrom(
 }
 
 export const agentApi = {
+  dashboard: () => api.get<AgentDashboard>('/agent/dashboard'),
   config: () => api.get<AgentConfiguration>('/agent/config'),
   testConfig: (input: AgentConfigurationInput) => api.post<{ ok: boolean; content: string; latencyMs: number; model: string }>('/agent/config/test', input),
   updateConfig: (input: AgentConfigurationInput) => api.put<{ ok: boolean; model: string; baseUrl: string; updatedAt: string }>('/agent/config', input),

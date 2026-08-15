@@ -4,7 +4,7 @@ import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, M
 import { useStore } from '../store'
 import { daysUntil } from '../utils'
 import type { Opportunity } from '../types'
-import { agentApi, integrationApi, type AgentSignal as ApiAgentSignal, type FeishuMessage } from '../api'
+import { agentApi, integrationApi, type AgentDashboard, type AgentSignal as ApiAgentSignal, type FeishuMessage } from '../api'
 
 type ChatMessage = { role: 'assistant' | 'user'; text: string }
 type AiHandoff = {
@@ -102,8 +102,8 @@ export default function SalesPartner() {
   const [dailyOpen, setDailyOpen] = useState(false)
   const [sideOpen, setSideOpen] = useState(false)
   const [sideTab, setSideTab] = useState<SideTab>('processing')
-  const [approvalResults, setApprovalResults] = useState<Record<string, 'confirmed' | 'rejected'>>({})
   const [reportAction, setReportAction] = useState<'copied' | 'exported' | null>(null)
+  const [dashboard, setDashboard] = useState<AgentDashboard | null>(null)
   const [feishuMessages, setFeishuMessages] = useState<FeishuMessage[]>([])
   const [agentSignals, setAgentSignals] = useState<ApiAgentSignal[]>([])
   const [agentSignalsLoaded, setAgentSignalsLoaded] = useState(false)
@@ -124,6 +124,17 @@ export default function SalesPartner() {
     document.body.classList.add('ai-partner-open')
     return () => document.body.classList.remove('ai-partner-open')
   }, [])
+
+  useEffect(() => {
+    let active = true
+    const refreshDashboard = async () => {
+      await bootstrap().catch(() => undefined)
+      const result = await agentApi.dashboard().catch(() => null)
+      if (active && result) setDashboard(result)
+    }
+    void refreshDashboard()
+    return () => { active = false }
+  }, [bootstrap])
 
   useEffect(() => {
     let active = true
@@ -214,7 +225,7 @@ export default function SalesPartner() {
   ).slice(0, 50)
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
 
-  const suggestions = [
+  const fallbackSuggestions = [
     ranked[0] && { id: 'priority', dimension: '优先推进', title: '先约关键沟通', opp: ranked[0], reason: `健康度 ${scoreFor(ranked[0])} 分，需求与金额区间已明确。`, action: '生成邀约话术' },
     urgent[0] && { id: 'risk', dimension: '风险处理', title: '检查保护期', opp: urgent[0], reason: urgent[0].lockedPermanently ? '商机已持续锁定，建议同步最新交付进展。' : `距保护期结束还有 ${Math.max(daysUntil(urgent[0].releaseAt), 0)} 天。`, action: '查看商机详情' },
     active.find(o => !o.contact.encryptedName) && (() => { const opp = active.find(o => !o.contact.encryptedName)!; return { id: 'fields', dimension: '资料补齐', title: '补齐关键联系人', opp, reason: '联系人信息不完整，会影响跟进和归属判断。', action: '打开资料页' } })(),
@@ -225,9 +236,24 @@ export default function SalesPartner() {
     && !o.lockedPermanently
     && o.progressReports.length === 0
   ).slice(0, 4)
-  const processing = [...approvalOpportunities, ...handlingOpportunities].slice(0, 10)
-  const stable = ranked.filter(o => scoreFor(o) >= 75).slice(0, 10)
+  const fallbackProcessing = [...approvalOpportunities, ...handlingOpportunities].slice(0, 10)
+  const fallbackStable = ranked.filter(o => scoreFor(o) >= 75).slice(0, 10)
   const releasingSoon = active.filter(o => !o.lockedPermanently && daysUntil(o.releaseAt) >= 0 && daysUntil(o.releaseAt) <= 7)
+  const suggestions = dashboard?.suggestions.map(item => ({
+    ...item,
+    opp: active.find(opp => opp.id === item.opportunityId),
+  })).filter((item): item is typeof item & { opp: Opportunity } => Boolean(item.opp)) ?? fallbackSuggestions.map(item => ({
+    ...item,
+    query: `请针对商机“${item.opp.customerName}”分析“${item.dimension}”。当前阶段：${stageText(item.opp.stage)}；${item.reason}请给出有事实依据的判断、下一步动作、负责人建议和时间点。`,
+  }))
+  const processing = dashboard?.processing ?? fallbackProcessing.map(opp => ({
+    opportunityId: opp.id, customerName: opp.customerName, stage: stageText(opp.stage), score: scoreFor(opp),
+    reason: !opp.lockedPermanently && daysUntil(opp.releaseAt) <= 7 ? `保护期剩余 ${Math.max(daysUntil(opp.releaseAt), 0)} 天` : '尚无结构化跟进记录',
+  }))
+  const stable = dashboard?.stable ?? fallbackStable.map(opp => ({
+    opportunityId: opp.id, customerName: opp.customerName, stage: stageText(opp.stage), score: scoreFor(opp), reason: '关键字段和近期进展相对完整',
+  }))
+  const summary = dashboard?.summary ?? { active: active.length, processing: processing.length, priority: suggestions.length, stable: stable.length, releasingSoon: releasingSoon.length }
   const yesterday = new Date(Date.now() - 86400_000)
   const yesterdayLabel = yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
   const stageData = (['reporting', 'signing', 'signed', 'delivery'] as Opportunity['stage'][]).map(stage => ({
@@ -247,9 +273,9 @@ export default function SalesPartner() {
   const dailyReportText = () => [
     '今日商机日报',
     `统计周期：昨日（${yesterdayLabel}）`,
-    `活跃商机：${active.length} 个`,
-    `顺利推进：${stable.length} 个`,
-    `需重点推进：${processing.length} 个`,
+    `活跃商机：${summary.active} 个`,
+    `顺利推进：${summary.stable} 个`,
+    `需重点推进：${summary.processing} 个`,
     `已签约/交付：${visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length} 个`,
     `今日建议：优先跟进「${ranked[0]?.customerName || '暂无'}」`,
     '',
@@ -410,38 +436,29 @@ export default function SalesPartner() {
 
   const renderSideList = () => {
     if (sideTab === 'suggestions') return suggestions.map(item => (
-      <button key={item.id} className="ai-side-item suggestions" onClick={() => navigate(`/opportunity/${item.opp.id}`)}>
+      <button key={item.id} className="ai-side-item suggestions" onClick={() => void ask(item.query, `分析「${item.opp.customerName}」的${item.dimension}`)}>
         <strong>{item.opp.customerName}</strong><p>{item.reason} · {item.action}</p>
       </button>
     ))
-    if (sideTab === 'processing') return processing.map(opp => {
-      const result = approvalResults[opp.id]
-      const remainingDays = daysUntil(opp.releaseAt)
-      const isApproval = !opp.lockedPermanently && remainingDays <= 7
-      const taskTitle = isApproval ? '保护期续期审批' : '补充最新跟进记录'
-      const taskDetail = isApproval
-        ? `保护期剩余 ${Math.max(remainingDays, 0)} 天，请确认是否继续锁定并推进。`
-        : '当前商机尚未补充结构化跟进记录，请完善沟通结果、下一步计划和预计完成时间。'
+    if (sideTab === 'processing') return processing.map(item => {
+      const isApproval = /保护期/.test(item.reason)
+      const taskTitle = isApproval ? '保护期推进判断' : '关键事项待处理'
       return (
-        <article key={opp.id} className={`ai-side-item processing ${isApproval ? 'approval' : 'handling'} ${result || ''}`}>
-          <button className="ai-side-card-link" onClick={() => navigate(`/opportunity/${opp.id}`)}>
-            <span className="ai-approval-card-head"><strong>{opp.customerName}</strong><span><i className={isApproval ? 'approval' : 'handling'}>{isApproval ? '需审批' : '需处理'}</i><em>{stageText(opp.stage)}</em></span></span>
+        <article key={item.opportunityId} className={`ai-side-item processing ${isApproval ? 'approval' : 'handling'}`}>
+          <button className="ai-side-card-link" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}>
+            <span className="ai-approval-card-head"><strong>{item.customerName}</strong><span><i className={isApproval ? 'approval' : 'handling'}>{isApproval ? '需判断' : '需处理'}</i><em>{item.stage}</em></span></span>
             <span className="ai-approval-subject"><b>{taskTitle}</b></span>
-            <p>{taskDetail}</p>
+            <p>{item.reason}</p>
           </button>
           <div className="ai-approval-actions">
-            {isApproval
-              ? result
-                ? <span className={result}>{result === 'confirmed' ? '已确认 · AI 执行中' : '已驳回'}</span>
-                : <><button className="confirm" onClick={() => setApprovalResults(items => ({ ...items, [opp.id]: 'confirmed' }))}>确认</button><button className="reject" onClick={() => setApprovalResults(items => ({ ...items, [opp.id]: 'rejected' }))}>驳回</button></>
-              : <button className="handle" onClick={() => navigate(`/opportunity/${opp.id}`)}>去处理<ChevronRight size={12} /></button>}
+            <button className="handle" onClick={() => void ask(`请分析商机“${item.customerName}”当前为什么需要处理。已知：阶段${item.stage}，健康度${item.score}分，${item.reason}。请给出关键判断、优先动作、负责人建议和时间点。`, `分析「${item.customerName}」的待处理事项`)}>让 AI 分析<ChevronRight size={12} /></button>
           </div>
         </article>
       )
     })
-    return stable.map(opp => (
-      <button key={opp.id} className="ai-side-item stable" onClick={() => navigate(`/opportunity/${opp.id}`)}>
-        <strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · 健康度 {scoreFor(opp)} 分，按当前节奏持续推进。</p>
+    return stable.map(item => (
+      <button key={item.opportunityId} className="ai-side-item stable" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}>
+        <strong>{item.customerName}</strong><p>{item.stage} · 健康度 {item.score} 分，{item.reason}。</p>
       </button>
     ))
   }
@@ -465,9 +482,9 @@ export default function SalesPartner() {
           <div className="ai-chat-column">
             <div className="ai-chat-scroll" ref={chatScrollRef}>
               <div className="ai-greeting"><div className="ai-bot-avatar"><img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /></div><div><h1>{greetingText()}，{currentUser.name}，这是我为你整理的商机进展</h1><p>{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })} · 数据来自 CRM 商机和已授权连接器</p></div></div>
-              <div className="ai-summary-card"><div className="ai-summary-intro"><p>你不在的这段时间，我继续盯着 Pipeline。当前有 <b>{active.length}</b> 个活跃商机，<b>{suggestions.length}</b> 个需重点推进项。</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批/处理</small><strong>{processing.length}</strong></div><em>待办事项</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{suggestions.length}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{stable.length}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{releasingSoon.length}</strong></div><em>7 天内</em></div></div></div>
+              <div className="ai-summary-card"><div className="ai-summary-intro"><p>我已分析当前权限范围内全部商机。当前有 <b>{summary.active}</b> 个活跃商机，<b>{summary.priority}</b> 个需重点推进项。{dashboard && <small>更新于 {new Date(dashboard.analyzedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 缓存 30 分钟</small>}</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批/处理</small><strong>{summary.processing}</strong></div><em>待办事项</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{summary.priority}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{summary.stable}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{summary.releasingSoon}</strong></div><em>7 天内</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
-              <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); if (item.id === 'priority') ask('帮我写跟进话术'); else navigate(`/opportunity/${item.opp.id}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已处理</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
+              <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button disabled={isResponding} onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); void ask(item.query, `${item.action}：${item.opp.customerName}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已分析</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
               {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span>{message.role === 'assistant' ? <FormattedAssistantAnswer text={message.text} loading={isResponding && index === messages.length - 1} /> : <p>{message.text}</p>}</div>)}
             </div>
             <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} disabled={isResponding} onClick={() => void ask(q)}>{q}</button>)}</div><div className={`ai-inputbar ${isResponding ? 'responding' : ''}`}><MessageCircle size={18} /><input ref={inputRef} disabled={isResponding} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && void ask()} placeholder={isResponding ? 'AI 销售伙伴正在分析…' : '你有什么商机进展 / 推进问题，都可以问我…'} /><button disabled={isResponding} onClick={() => void ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note"><i className={agentConfigured ? 'online' : 'fallback'} />{agentConfigured ? 'DeepSeek Harness 已连接 · ' : '规则模式 · '}Scale X 仅基于你有权访问的 CRM 与连接器数据提供商机分析和推进支持</div></div>
