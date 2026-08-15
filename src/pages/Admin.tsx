@@ -1609,8 +1609,8 @@ function AgentConfigSettings({ desc }: { desc: string }) {
 }
 
 const allTabs = [
-  { key: 'channels', label: '渠道管理',   icon: GitBranch, desc: '管理渠道伙伴信息及其登录账号', can: (r: string) => canManageChannels(r) },
-  { key: 'sales',    label: '直客销售',   icon: Users,     desc: '管理 JD 直客销售人员信息、所属组别及登录账号', can: (r: string) => canManageSales(r) },
+  { key: 'sales',    label: '销售管理',     icon: Users,     desc: '管理 JD 销售人员信息、所属组别及登录账号', can: (r: string) => canManageSales(r) },
+  { key: 'channels', label: '渠道伙伴管理', icon: GitBranch, desc: '管理渠道伙伴信息及其登录账号', can: (r: string) => canManageChannels(r) },
   { key: 'admins',   label: '管理员账号', icon: Shield,    desc: '管理系统管理员账号，支持多账号添加', can: (r: string) => canManageAdmins(r) },
   { key: 'agent',    label: 'Agent 配置', icon: Bot,       desc: '配置模型连接与可开放的 Harness Prompt 分层', can: (r: string) => canManageAdmins(r) },
   { key: 'logs',     label: '操作日志',   icon: FileText,  desc: '查看所有用户的操作的记录', can: (r: string) => isAdminRole(r) },

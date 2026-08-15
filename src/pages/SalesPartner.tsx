@@ -699,7 +699,7 @@ export default function SalesPartner() {
     <div className={`ai-partner-page ${sideOpen ? 'with-side' : ''}`}>
       <aside className="ai-signal-panel glass-panel">
         <div className="ai-panel-title"><span className="ai-kicker"><Sparkles size={14} /> 商机上下文（实时信号）</span><b>{visibleSignals.length} 条</b></div>
-        <div className="ai-filter-row">{(['all', 'jingme', 'feishu', 'email', 'meeting'] as SignalChannel[]).map(id => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{id === 'all' ? '全部' : channelMeta[id].label}</button>)}</div>
+        <div className="ai-filter-row">{(['all', 'feishu', 'jingme', 'email', 'meeting'] as SignalChannel[]).map(id => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{id === 'all' ? '全部' : channelMeta[id].label}</button>)}</div>
         <div className="ai-signal-list">
           {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; const tagTone = signalTagTone(item); return <button key={item.id} className={`ai-signal-item ${item.opportunityId ? '' : 'source-only'}`} onClick={() => item.opportunityId && navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span className={tagTone}>{item.tag}</span>{item.sourceCount && item.sourceCount > 1 ? <small>汇总 {item.sourceCount} 条</small> : null}</div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">暂无与商机推进相关的新信号</div>}
         </div>
