@@ -9,7 +9,7 @@ import { agentApi, integrationApi, type AgentSignal as ApiAgentSignal, type Feis
 type ChatMessage = { role: 'assistant' | 'user'; text: string }
 type SignalChannel = 'all' | 'feishu' | 'email' | 'meeting' | 'jingme'
 type SideTab = 'processing' | 'stable' | 'suggestions'
-type SalesSignal = { id: string; opportunityId?: string; channel: Exclude<SignalChannel, 'all'>; time: string; title: string; tag: string; summary: string }
+type SalesSignal = { id: string; opportunityId?: string; channel: Exclude<SignalChannel, 'all'>; time: string; title: string; tag: string; summary: string; sourceCount?: number }
 
 const channelMeta: Record<Exclude<SignalChannel, 'all'>, { label: string; color: string; bg: string }> = {
   feishu: { label: '飞书', color: '#2563eb', bg: '#eff6ff' },
@@ -69,6 +69,7 @@ export default function SalesPartner() {
   const [reportAction, setReportAction] = useState<'copied' | 'exported' | null>(null)
   const [feishuMessages, setFeishuMessages] = useState<FeishuMessage[]>([])
   const [agentSignals, setAgentSignals] = useState<ApiAgentSignal[]>([])
+  const [agentSignalsLoaded, setAgentSignalsLoaded] = useState(false)
   const [agentConfigured, setAgentConfigured] = useState<boolean | null>(null)
   const [isResponding, setIsResponding] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -97,6 +98,7 @@ export default function SalesPartner() {
           const hadNewUpdate = structured.some(signal => signal.opportunityUpdated && !signalIdsRef.current.has(signal.id))
           signalIdsRef.current = new Set(structured.map(signal => signal.id))
           setAgentSignals(structured)
+          setAgentSignalsLoaded(true)
           setFeishuMessages(raw)
           setAgentConfigured(status?.configured ?? false)
           if (hadNewUpdate) void bootstrap()
@@ -162,7 +164,7 @@ export default function SalesPartner() {
       summary: `${detail.slice(0, 90)}${detail.length > 90 ? '…' : ''}`,
     }
   })
-  const liveFeishuSignals: SalesSignal[] = agentSignals.length
+  const liveFeishuSignals: SalesSignal[] = agentSignalsLoaded
     ? agentSignals.map(signal => ({
         id: `agent-${signal.id}`,
         opportunityId: signal.opportunityId,
@@ -171,13 +173,14 @@ export default function SalesPartner() {
         title: signal.title,
         tag: signal.tag,
         summary: signal.summary,
+        sourceCount: signal.sourceCount,
       }))
     : rawFeishuSignals
   const liveOpportunityIds = new Set(liveFeishuSignals.map(signal => signal.opportunityId).filter(Boolean))
   const fallbackSignals = opportunitySignals.filter(signal => !signal.opportunityId || !liveOpportunityIds.has(signal.opportunityId))
-  const signals: SalesSignal[] = (liveFeishuSignals.length
-    ? [...liveFeishuSignals, ...fallbackSignals]
-    : opportunitySignals
+  const signals: SalesSignal[] = (agentSignalsLoaded
+    ? liveFeishuSignals
+    : liveFeishuSignals.length ? [...liveFeishuSignals, ...fallbackSignals] : opportunitySignals
   ).slice(0, 50)
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
 
@@ -397,7 +400,7 @@ export default function SalesPartner() {
         <div className="ai-panel-title"><span className="ai-kicker"><Sparkles size={14} /> 商机实时信号</span><b>{visibleSignals.length} 条</b></div>
         <div className="ai-filter-row">{(['all', 'jingme', 'feishu', 'email', 'meeting'] as SignalChannel[]).map(id => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{id === 'all' ? '全部' : channelMeta[id].label}</button>)}</div>
         <div className="ai-signal-list">
-          {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; return <button key={item.id} className={`ai-signal-item ${item.opportunityId ? '' : 'source-only'}`} onClick={() => item.opportunityId && navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span>{item.tag}</span></div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">该渠道暂无新信号</div>}
+          {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; return <button key={item.id} className={`ai-signal-item ${item.opportunityId ? '' : 'source-only'}`} onClick={() => item.opportunityId && navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span>{item.tag}</span>{item.sourceCount && item.sourceCount > 1 ? <small>汇总 {item.sourceCount} 条</small> : null}</div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">暂无与商机推进相关的新信号</div>}
         </div>
       </aside>
 

@@ -22,10 +22,12 @@ type SignalExtraction = {
   productInterests: ('JM 声访' | 'JM 外呼')[]
   progressSummary: string | null
   shouldAppendProgress: boolean
+  salesRelevance: number
+  shouldDisplay: boolean
 }
 
 type HarnessRun = { sessionId: string; content: string; finishReason?: string }
-const SIGNAL_PROCESSING_VERSION = 5
+const SIGNAL_PROCESSING_VERSION = 6
 
 function redactSensitiveText(value: string | null): string | null {
   return value?.replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3') ?? null
@@ -39,6 +41,18 @@ function extractionForStorage(extraction: SignalExtraction): Prisma.InputJsonVal
     progressSummary: redactSensitiveText(extraction.progressSummary),
     contactPhone: redactSensitiveText(extraction.contactPhone),
   } as unknown as Prisma.InputJsonValue
+}
+
+function displaySummary(extraction: SignalExtraction): string {
+  if (extraction.progressSummary) return redactSensitiveText(extraction.progressSummary) ?? ''
+  const facts = [
+    extraction.requirementDescription ? `客户需求：${extraction.requirementDescription}` : '',
+    extraction.companyName ? `签约主体/公司全称：${extraction.companyName}` : '',
+    extraction.contactName ? `关键联系人更新为${extraction.contactName}` : '',
+    extraction.contactDepartment ? `需求部门更新为${extraction.contactDepartment}` : '',
+    extraction.productInterests.length ? `产品兴趣：${extraction.productInterests.join('、')}` : '',
+  ].filter(Boolean)
+  return redactSensitiveText(facts.join('；') || extraction.summary) ?? ''
 }
 
 const STAGE_RANK: Record<OpportunityStage, number> = {
@@ -93,6 +107,22 @@ function materialProgress(content: string, fields: ReturnType<typeof explicitFie
   return clean.replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3').slice(0, 220)
 }
 
+function signalRelevance(content: string, fields: ReturnType<typeof explicitFields>, matched: boolean) {
+  if (!matched) return { score: 0.15, display: false }
+  const clean = content.replace(/@_user_\d+/g, '').replace(/\s+/g, ' ').trim()
+  const hasMaterialTopic = /需求|调研目标|调研范围|样本人群|方案|演示|测试结果|报价|预算|价格|采购|合同|签约|盖章|交付|上线|验收|排期|会议时间|延期|暂停|取消|风险|竞品|投诉|拒绝|已确认|已通过/.test(clean)
+  const hasFieldChange = Boolean(fields.companyName || fields.contactName || fields.contactPhone || fields.contactDepartment)
+  const noiseOnly = /^(?:好的?|收到|明白|辛苦了?|谢谢|感谢|稍后|回头|可以|没问题|ok|OK|嗯|在吗)[！!。.，,\s]*$/.test(clean)
+  const display = !noiseOnly && (hasMaterialTopic || hasFieldChange)
+  return { score: display ? (hasFieldChange || /报价|预算|合同|签约|交付|风险|已确认|已通过/.test(clean) ? 0.94 : 0.82) : 0.28, display }
+}
+
+function conciseSummary(content: string): string {
+  const clean = content.replace(/@_user_\d+/g, '').replace(/\s+/g, ' ').trim()
+    .replace(/^(?:你好|您好|各位好)[，,！!。.\s]*/g, '')
+  return `${clean.slice(0, 120)}${clean.length > 120 ? '…' : ''}`
+}
+
 function findOpportunity(message: { chatName: string; contentText: string }, opportunities: Opportunity[]): Opportunity | undefined {
   const haystack = normalizeName(`${message.chatName} ${message.contentText}`)
   const groupBrand = message.chatName.split(/[&＆|]/)[0]?.trim()
@@ -129,17 +159,20 @@ function heuristicExtraction(
   if (signalType === '一般沟通' && (fields.companyName || fields.contactName || fields.contactPhone || fields.contactDepartment)) signalType = '需求更新'
   const progressSummary = materialProgress(content, fields)
   const requirementFact = /需求|调研目标|调研范围|样本人群|产品兴趣/.test(content)
+  const relevance = signalRelevance(content, fields, Boolean(matched))
   return {
     signalType,
     matchedOpportunityId: matched?.id ?? null,
     confidence: matched ? (matched.customerName === message.chatName.split(/[&＆|]/)[0]?.trim() ? 0.96 : 0.88) : 0.35,
-    summary: `${message.senderName}：${content.slice(0, 120)}${content.length > 120 ? '…' : ''}`,
+    summary: conciseSummary(content),
     suggestedStage,
     requirementDescription: requirementFact ? content.slice(0, 120) : null,
     ...fields,
     productInterests,
     progressSummary,
     shouldAppendProgress: Boolean(matched && progressSummary),
+    salesRelevance: relevance.score,
+    shouldDisplay: relevance.display,
   }
 }
 
@@ -171,6 +204,12 @@ function validateExtraction(value: unknown, fallback: SignalExtraction, opportun
   const progressSummary = fallbackProgress
     ? (modelProgress ?? fallbackProgress).replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3')
     : null
+  const modelRelevance = Math.max(0, Math.min(1, Number(item.salesRelevance ?? fallback.salesRelevance)))
+  const salesRelevance = Math.max(fallback.salesRelevance, Number.isFinite(modelRelevance) ? modelRelevance : 0)
+  const shouldDisplay = Boolean(
+    matchedOpportunityId && confidence >= 0.75 && signalType !== '一般沟通' && salesRelevance >= 0.65
+    && (fallback.shouldDisplay || item.shouldDisplay === true),
+  )
   return {
     signalType,
     matchedOpportunityId,
@@ -183,6 +222,8 @@ function validateExtraction(value: unknown, fallback: SignalExtraction, opportun
     productInterests: [...new Set(products)],
     progressSummary,
     shouldAppendProgress: Boolean(progressSummary),
+    salesRelevance,
+    shouldDisplay,
   }
 }
 
@@ -220,7 +261,7 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
   const { extraction, source } = await extractSignal(message, opportunities)
   const opportunity = extraction.matchedOpportunityId
     ? opportunities.find(item => item.id === extraction.matchedOpportunityId) : undefined
-  const shouldUpdate = Boolean(opportunity && extraction.confidence >= 0.82)
+  const shouldUpdate = Boolean(opportunity && extraction.confidence >= 0.82 && extraction.shouldDisplay)
   const hasPotentialUpdate = Boolean(
     extraction.requirementDescription || extraction.companyName || extraction.contactName || extraction.contactPhone
     || extraction.contactDepartment || extraction.productInterests.length || extraction.suggestedStage || extraction.progressSummary,
@@ -234,7 +275,7 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
         opportunityId: opportunity?.id,
         signalType: extraction.signalType,
         title: opportunity?.customerName ?? message.chatName,
-        summary: redactSensitiveText(extraction.summary) ?? '',
+        summary: displaySummary(extraction),
         confidence: extraction.confidence,
         extractedData: extractionForStorage(extraction),
         processingSource: source,
@@ -244,7 +285,7 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
       },
       update: {
         opportunityId: opportunity?.id, signalType: extraction.signalType,
-        title: opportunity?.customerName ?? message.chatName, summary: redactSensitiveText(extraction.summary) ?? '',
+        title: opportunity?.customerName ?? message.chatName, summary: displaySummary(extraction),
         confidence: extraction.confidence, extractedData: extractionForStorage(extraction),
         processingSource: source, processingVersion: SIGNAL_PROCESSING_VERSION,
         opportunityUpdated: shouldUpdate && hasPotentialUpdate,

@@ -34,7 +34,9 @@ companyName 仅在原文明确出现公司全称或签约主体时填写；不�
 contactName、contactPhone、contactDepartment 仅在原文明确出现时填写；不得根据称谓或群名猜测。
 progressSummary 仅在出现已确认需求、报价/预算变化、合同/签约进展、明确会议或交付排期、风险变化、公司主体或关键联系人更新时填写，否则为 null。
 shouldAppendProgress 必须与 progressSummary 是否存在保持一致。
-完整格式：{"signalType":"需求更新","matchedOpportunityId":null,"confidence":0,"summary":"","suggestedStage":null,"requirementDescription":null,"companyName":null,"contactName":null,"contactPhone":null,"contactDepartment":null,"productInterests":[],"progressSummary":null,"shouldAppendProgress":false}`
+summary 必须是提炼后的商机进展结论，不复述寒暄、@、收到、确认收到等过程性对话，不以发送人姓名开头。
+salesRelevance 表示消息与商机推进的相关度，范围 0 到 1。只有包含实质性的需求、方案、报价、采购、签约、交付、明确排期、风险或关键资料变化时，shouldDisplay 才能为 true；普通寒暄、协调、收到回复和无结论讨论必须为 false。
+完整格式：{"signalType":"需求更新","matchedOpportunityId":null,"confidence":0,"summary":"","suggestedStage":null,"requirementDescription":null,"companyName":null,"contactName":null,"contactPhone":null,"contactDepartment":null,"productInterests":[],"progressSummary":null,"shouldAppendProgress":false,"salesRelevance":0,"shouldDisplay":false}`
 
 const IMMUTABLE_OPPORTUNITY_ADVISOR_PROTOCOL = `【商机参谋协议｜不可编辑】
 任务为 OPPORTUNITY_ADVISOR 时：

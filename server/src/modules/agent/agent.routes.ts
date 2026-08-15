@@ -130,23 +130,44 @@ agentRouter.get('/signals', ah(async (req, res) => {
     where: isAdminRole(auth.user.role) ? {} : { opportunity: { is: visible } },
     include: { sourceMessage: { select: { chatId: true, chatName: true, senderName: true, createdAt: true } } },
     orderBy: { createdAt: 'desc' },
-    take: limit,
+    take: Math.min(250, limit * 5),
   })
-  res.json(items.map(item => ({
-    id: item.id,
-    opportunityId: item.opportunityId,
-    channel: 'feishu',
-    time: item.createdAt,
-    title: item.title,
-    tag: item.signalType,
-    summary: item.summary,
-    confidence: item.confidence,
-    processingSource: item.processingSource,
-    opportunityUpdated: item.opportunityUpdated,
-    chatId: item.sourceMessage.chatId,
-    chatName: item.sourceMessage.chatName,
-    senderName: item.sourceMessage.senderName,
-  })))
+  const relevant = items.filter(item => {
+    const extracted = item.extractedData && typeof item.extractedData === 'object' && !Array.isArray(item.extractedData)
+      ? item.extractedData as Record<string, unknown> : {}
+    return item.opportunityId && item.signalType !== '一般沟通'
+      && extracted.shouldDisplay === true && Number(extracted.salesRelevance ?? 0) >= 0.65
+  })
+  type SignalRow = (typeof items)[number]
+  const groups = new Map<string, SignalRow[]>()
+  const dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' })
+  for (const item of relevant) {
+    const key = `${item.opportunityId}:${item.signalType}:${dayFormatter.format(item.createdAt)}`
+    const group = groups.get(key)
+    if (group) group.push(item)
+    else groups.set(key, [item])
+  }
+  const summaries = [...groups.values()].map(group => {
+    const latest = group[0]
+    const parts = [...new Set(group.map(item => item.summary.trim()).filter(Boolean))]
+    return {
+      id: latest.id,
+      opportunityId: latest.opportunityId,
+      channel: 'feishu',
+      time: latest.createdAt,
+      title: latest.title,
+      tag: latest.signalType,
+      summary: parts.length > 1 ? `综合判断：${parts.slice(0, 3).join('；')}` : (parts[0] ?? latest.summary),
+      sourceCount: group.length,
+      confidence: Math.max(...group.map(item => item.confidence)),
+      processingSource: group.some(item => item.processingSource === 'deepseek-harness') ? 'deepseek-harness' : 'rules',
+      opportunityUpdated: group.some(item => item.opportunityUpdated),
+      chatId: latest.sourceMessage.chatId,
+      chatName: latest.sourceMessage.chatName,
+      senderName: latest.sourceMessage.senderName,
+    }
+  }).sort((left, right) => right.time.getTime() - left.time.getTime()).slice(0, limit)
+  res.json(summaries)
 }))
 
 const chatSchema = z.object({

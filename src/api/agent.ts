@@ -14,6 +14,7 @@ export type AgentSignal = {
   chatId: string
   chatName: string
   senderName: string
+  sourceCount: number
 }
 
 export type AgentStatus = {
