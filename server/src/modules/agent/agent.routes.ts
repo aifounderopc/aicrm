@@ -2,13 +2,107 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../../db.js'
 import { requireAuth } from '../../middleware/auth.js'
-import { ah } from '../../middleware/error.js'
-import { isAdminRole } from '../../middleware/roles.js'
+import { ApiError, ah } from '../../middleware/error.js'
+import { isAdminRole, requireRole } from '../../middleware/roles.js'
 import { config } from '../../config.js'
-import { createSessionId, fallbackAnswer, proxyHarnessStream } from './agent.service.js'
+import { encryptField } from '../../util/crypto.js'
+import { writeLog } from '../../util/audit.js'
+import { agentPromptDefaults, loadAgentRuntimeConfig, persistEnvironmentAgentConfig } from './agent.config.js'
+import { assembleAgentSystemPrompt } from './agent.prompts.js'
+import { createSessionId, fallbackAnswer, proxyHarnessStream, testHarnessConfiguration } from './agent.service.js'
 
 export const agentRouter = Router()
 agentRouter.use(requireAuth)
+
+const superAdminOnly = requireRole(role => role === 'admin')
+const agentConfigSchema = z.object({
+  model: z.string().trim().min(1).max(160),
+  baseUrl: z.string().trim().url().max(500).refine(value => /^https?:\/\//.test(value), 'API 地址仅支持 HTTP(S)'),
+  apiKey: z.string().trim().max(1000).optional(),
+  soulPrompt: z.string().trim().min(20).max(12_000),
+  businessPrompt: z.string().trim().min(20).max(16_000),
+  responsePrompt: z.string().trim().min(10).max(8_000),
+})
+
+async function resolveSubmittedConfig(input: z.infer<typeof agentConfigSchema>) {
+  const current = await loadAgentRuntimeConfig()
+  const editable = {
+    soulPrompt: input.soulPrompt,
+    businessPrompt: input.businessPrompt,
+    responsePrompt: input.responsePrompt,
+  }
+  return {
+    model: input.model,
+    baseUrl: input.baseUrl.replace(/\/$/, ''),
+    apiKey: input.apiKey || current.apiKey,
+    ...editable,
+    systemPrompt: assembleAgentSystemPrompt(editable),
+  }
+}
+
+agentRouter.get('/config', superAdminOnly, ah(async (_req, res) => {
+  await persistEnvironmentAgentConfig()
+  const [stored, runtime] = await Promise.all([
+    prisma.agentConfiguration.findUnique({ where: { id: 'default' } }),
+    loadAgentRuntimeConfig(),
+  ])
+  res.json({
+    provider: stored?.provider ?? 'deepseek-harness',
+    model: runtime.model,
+    baseUrl: runtime.baseUrl,
+    hasApiKey: Boolean(runtime.apiKey),
+    keyHint: runtime.apiKey ? '••••••••••••' : '',
+    soulPrompt: runtime.soulPrompt,
+    businessPrompt: runtime.businessPrompt,
+    responsePrompt: runtime.responsePrompt,
+    defaults: agentPromptDefaults,
+    updatedAt: stored?.updatedAt ?? null,
+  })
+}))
+
+agentRouter.post('/config/test', superAdminOnly, ah(async (req, res) => {
+  const runtime = await resolveSubmittedConfig(agentConfigSchema.parse(req.body))
+  if (!runtime.apiKey) throw new ApiError(400, '请填写 API Key')
+  try {
+    res.json(await testHarnessConfiguration(runtime))
+  } catch (error) {
+    throw new ApiError(502, `模型连接失败：${error instanceof Error ? error.message.slice(0, 260) : '未知错误'}`)
+  }
+}))
+
+agentRouter.put('/config', superAdminOnly, ah(async (req, res) => {
+  const input = agentConfigSchema.parse(req.body)
+  const runtime = await resolveSubmittedConfig(input)
+  if (!runtime.apiKey) throw new ApiError(400, '请填写 API Key')
+  let testResult
+  try {
+    testResult = await testHarnessConfiguration(runtime)
+  } catch (error) {
+    throw new ApiError(502, `保存前连接校验失败：${error instanceof Error ? error.message.slice(0, 260) : '未知错误'}`)
+  }
+  const auth = req.auth!
+  const saved = await prisma.agentConfiguration.upsert({
+    where: { id: 'default' },
+    create: {
+      id: 'default', model: runtime.model, baseUrl: runtime.baseUrl,
+      encryptedApiKey: encryptField(runtime.apiKey), soulPrompt: runtime.soulPrompt,
+      businessPrompt: runtime.businessPrompt, responsePrompt: runtime.responsePrompt,
+      updatedBy: auth.authUserId,
+    },
+    update: {
+      model: runtime.model, baseUrl: runtime.baseUrl,
+      encryptedApiKey: encryptField(runtime.apiKey), soulPrompt: runtime.soulPrompt,
+      businessPrompt: runtime.businessPrompt, responsePrompt: runtime.responsePrompt,
+      updatedBy: auth.authUserId,
+    },
+  })
+  await writeLog(req, {
+    actorId: auth.authUserId, actorName: auth.user.name, action: '更新 Agent 配置',
+    detail: `模型 ${runtime.model}，API ${runtime.baseUrl}；配置已通过连接校验并即时生效`,
+    targetType: 'agent_configuration', targetId: saved.id,
+  })
+  res.json({ ok: true, model: saved.model, baseUrl: saved.baseUrl, updatedAt: saved.updatedAt, test: testResult })
+}))
 
 function opportunityWhere(auth: NonNullable<Express.Request['auth']>) {
   if (isAdminRole(auth.user.role)) return {}
@@ -17,12 +111,14 @@ function opportunityWhere(auth: NonNullable<Express.Request['auth']>) {
 }
 
 agentRouter.get('/status', ah(async (_req, res) => {
+  const runtime = await loadAgentRuntimeConfig()
   try {
     const response = await fetch(`${config.agentHarnessUrl}/health`, { signal: AbortSignal.timeout(3_000) })
     if (!response.ok) throw new Error(String(response.status))
-    res.json(await response.json())
+    const health = await response.json() as Record<string, unknown>
+    res.json({ ...health, configured: Boolean(runtime.apiKey), model: runtime.model })
   } catch {
-    res.json({ ok: false, configured: false, framework: 'deepseek-harness', model: 'deepseek-v4-flash' })
+    res.json({ ok: false, configured: Boolean(runtime.apiKey), framework: 'deepseek-harness', model: runtime.model })
   }
 }))
 

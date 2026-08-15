@@ -18,4 +18,7 @@ export const config = {
   feishuAppId: process.env.FEISHU_APP_ID,
   feishuAppSecret: process.env.FEISHU_APP_SECRET,
   agentHarnessUrl: process.env.AGENT_HARNESS_URL ?? 'http://agent-harness:8090',
+  deepseekApiKey: process.env.DEEPSEEK_API_KEY,
+  deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
+  deepseekModel: process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
 }

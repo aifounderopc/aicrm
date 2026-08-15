@@ -1,4 +1,4 @@
-import { ApiError, buildApiUrl } from './client'
+import { ApiError, api, buildApiUrl } from './client'
 
 export type AgentSignal = {
   id: string
@@ -22,6 +22,28 @@ export type AgentStatus = {
   framework: string
   sdkVersion?: string
   model: string
+}
+
+export type AgentPromptLayers = {
+  soulPrompt: string
+  businessPrompt: string
+  responsePrompt: string
+}
+
+export type AgentConfiguration = AgentPromptLayers & {
+  provider: string
+  model: string
+  baseUrl: string
+  hasApiKey: boolean
+  keyHint: string
+  defaults: AgentPromptLayers
+  updatedAt: string | null
+}
+
+export type AgentConfigurationInput = AgentPromptLayers & {
+  model: string
+  baseUrl: string
+  apiKey?: string
 }
 
 export type AgentStreamEvent =
@@ -59,6 +81,9 @@ async function streamChat(
 }
 
 export const agentApi = {
+  config: () => api.get<AgentConfiguration>('/agent/config'),
+  testConfig: (input: AgentConfigurationInput) => api.post<{ ok: boolean; content: string; latencyMs: number; model: string }>('/agent/config/test', input),
+  updateConfig: (input: AgentConfigurationInput) => api.put<{ ok: boolean; model: string; baseUrl: string; updatedAt: string }>('/agent/config', input),
   status: async () => {
     const response = await fetch(buildApiUrl('/agent/status'), { credentials: 'include' })
     if (!response.ok) throw new ApiError('无法读取 Agent 状态', response.status)

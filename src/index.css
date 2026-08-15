@@ -799,3 +799,10 @@ body.ai-partner-open { overflow: hidden; }
   .feishu-credential-fields { grid-template-columns: 1fr; }
   .connector-copy p { white-space: normal; }
 }
+@keyframes agent-config-spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: agent-config-spin 0.9s linear infinite;
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import queue
 import threading
@@ -17,33 +18,57 @@ SOUL = (ROOT / "prompts" / "soul.md").read_text(encoding="utf-8")
 HARNESS_PROMPT = (ROOT / "prompts" / "harness.md").read_text(encoding="utf-8")
 SYSTEM_PROMPT = f"{SOUL}\n\n{HARNESS_PROMPT}"
 MODEL = os.getenv("DSH_MODEL", "deepseek-v4-flash")
-HAS_API_KEY = bool(os.getenv("DEEPSEEK_API_KEY"))
+BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 
 app = FastAPI(title="Scale X AI Sales Partner Harness", version="0.1.0")
 _lock = threading.Lock()
 _harness: DeepSeekHarness | None = None
+_harness_signature: tuple[str, str, str, str] | None = None
 
 
 class RunInput(BaseModel):
     prompt: str = Field(min_length=1, max_length=120_000)
     session_id: str = Field(min_length=1, max_length=160)
+    model: str | None = Field(default=None, min_length=1, max_length=160)
+    base_url: str | None = Field(default=None, min_length=1, max_length=500)
+    api_key: str | None = Field(default=None, min_length=1, max_length=1000)
+    system_prompt: str | None = Field(default=None, min_length=1, max_length=60_000)
 
 
-def harness() -> DeepSeekHarness:
-    global _harness
-    if not HAS_API_KEY:
+def resolved_config(body: RunInput) -> tuple[str, str, str, str]:
+    return (
+        body.model or MODEL,
+        body.base_url or BASE_URL,
+        body.api_key or os.getenv("DEEPSEEK_API_KEY", ""),
+        body.system_prompt or SYSTEM_PROMPT,
+    )
+
+
+def harness(body: RunInput) -> DeepSeekHarness:
+    global _harness, _harness_signature
+    model, base_url, api_key, system_prompt = resolved_config(body)
+    if not api_key:
         raise HTTPException(status_code=503, detail="DEEPSEEK_API_KEY is not configured")
-    if _harness is None:
+    signature = (model, base_url, hashlib.sha256(api_key.encode()).hexdigest(), hashlib.sha256(system_prompt.encode()).hexdigest())
+    if _harness is None or _harness_signature != signature:
+        if _harness is not None:
+            _harness.close()
         _harness = DeepSeekHarness(
             provider="deepseek-official",
-            model=MODEL,
+            model=model,
             max_tokens=8192,
             cwd=str(ROOT),
             cordis=str(ROOT / "cordis.yml"),
             session_root=str(ROOT / ".sessions"),
-            env={"DSH_SYSTEM_PROMPT": SYSTEM_PROMPT, "DSH_MODEL": MODEL},
+            env={
+                "DSH_SYSTEM_PROMPT": system_prompt,
+                "DSH_MODEL": model,
+                "DEEPSEEK_API_KEY": api_key,
+                "DEEPSEEK_BASE_URL": base_url,
+            },
             request_timeout_seconds=240,
         )
+        _harness_signature = signature
     return _harness
 
 
@@ -57,7 +82,7 @@ def shutdown() -> None:
 def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "configured": HAS_API_KEY,
+        "configured": bool(os.getenv("DEEPSEEK_API_KEY")),
         "framework": "deepseek-harness",
         "sdkVersion": "0.1.0rc6",
         "model": MODEL,
@@ -67,7 +92,7 @@ def health() -> dict[str, Any]:
 @app.post("/run")
 def run_agent(body: RunInput) -> dict[str, Any]:
     with _lock:
-        result = harness().run(body.prompt, session_id=body.session_id)
+        result = harness(body).run(body.prompt, session_id=body.session_id)
     return {
         "sessionId": result.session_id,
         "content": result.final_response,
@@ -81,7 +106,7 @@ def sse(payload: dict[str, Any]) -> str:
 
 @app.post("/stream")
 def stream_agent(body: RunInput) -> StreamingResponse:
-    if not HAS_API_KEY:
+    if not resolved_config(body)[2]:
         raise HTTPException(status_code=503, detail="DEEPSEEK_API_KEY is not configured")
     events: queue.Queue[dict[str, Any] | None] = queue.Queue()
 
@@ -105,7 +130,7 @@ def stream_agent(body: RunInput) -> StreamingResponse:
 
         try:
             with _lock:
-                result = harness().run(body.prompt, session_id=body.session_id, on_notification=on_notification)
+                result = harness(body).run(body.prompt, session_id=body.session_id, on_notification=on_notification)
             if not emitted and result.final_response:
                 events.put({"type": "delta", "content": result.final_response})
             events.put({"type": "done", "sessionId": result.session_id, "finishReason": result.finish_reason})

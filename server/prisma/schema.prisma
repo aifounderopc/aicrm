@@ -295,3 +295,20 @@ model SalesSignal {
   @@index([opportunityId])
   @@map("sales_signals")
 }
+
+// AI 销售伙伴可开放配置。安全守卫和结构化协议由服务端内置，不允许后台覆盖。
+model AgentConfiguration {
+  id              String   @id @default("default")
+  provider        String   @default("deepseek-harness")
+  model           String
+  baseUrl         String   @map("base_url")
+  encryptedApiKey String   @map("encrypted_api_key")
+  soulPrompt      String   @db.Text @map("soul_prompt")
+  businessPrompt  String   @db.Text @map("business_prompt")
+  responsePrompt  String   @db.Text @map("response_prompt")
+  updatedBy       String?  @map("updated_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("agent_configurations")
+}

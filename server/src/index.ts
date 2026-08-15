@@ -15,6 +15,7 @@ import { integrationRouter } from './modules/integrations/integrations.routes.js
 import { activateFeishuReceiver } from './modules/feishu/feishu.service.js'
 import { agentRouter } from './modules/agent/agent.routes.js'
 import { scheduleSignalProcessing } from './modules/agent/agent.service.js'
+import { persistEnvironmentAgentConfig } from './modules/agent/agent.config.js'
 import { scheduleAutoRelease } from './jobs/autoRelease.js'
 
 const app = express()
@@ -42,6 +43,9 @@ app.listen(config.port, () => {
   console.log(`✅ JoyMarketing CRM API 已启动: http://localhost:${config.port}/api`)
   // 保护期自动释放（开发用内置定时器；生产改用京东云定时任务调用 runAutoRelease）
   scheduleAutoRelease()
+  void persistEnvironmentAgentConfig().catch(error => {
+    console.error('[agent] model config bootstrap failed', error instanceof Error ? error.message : 'unknown error')
+  })
   scheduleSignalProcessing()
   void activateFeishuReceiver().catch(error => {
     console.error('[feishu] receiver startup failed', error instanceof Error ? error.message : 'unknown error')

@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, validatePassword, passwordStrength, PASSWORD_RULE_HINT, roleName, isAdminRole, canManageChannels, canManageSales, canManageAdmins } from '../utils'
 import type { Opportunity } from '../types'
-import { Shield, Users, FileText, GitBranch, UserCheck } from 'lucide-react'
+import { Shield, Users, FileText, GitBranch, UserCheck, Bot, BrainCircuit, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, RotateCcw, Save, TestTube2 } from 'lucide-react'
 import { useMobile } from '../hooks/useMobile'
+import { agentApi, type AgentConfiguration, type AgentConfigurationInput } from '../api/agent'
+import { ApiError } from '../api/client'
 
 const thStyle: React.CSSProperties = {
   padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6b7280',
@@ -1443,10 +1445,134 @@ function Logs({ desc }: { desc: string }) {
   )
 }
 
+function AgentConfigSettings({ desc }: { desc: string }) {
+  const isMobile = useMobile()
+  const [configData, setConfigData] = useState<AgentConfiguration | null>(null)
+  const [form, setForm] = useState<AgentConfigurationInput>({ model: '', baseUrl: '', apiKey: '', soulPrompt: '', businessPrompt: '', responsePrompt: '' })
+  const [showKey, setShowKey] = useState(false)
+  const [busy, setBusy] = useState<'load' | 'test' | 'save' | null>('load')
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const load = async () => {
+    setBusy('load')
+    try {
+      const data = await agentApi.config()
+      setConfigData(data)
+      setForm({
+        model: data.model, baseUrl: data.baseUrl, apiKey: '',
+        soulPrompt: data.soulPrompt, businessPrompt: data.businessPrompt, responsePrompt: data.responsePrompt,
+      })
+    } catch (error) {
+      setNotice({ type: 'error', text: error instanceof ApiError ? error.message : 'Agent 配置加载失败' })
+    } finally { setBusy(null) }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  const runAction = async (action: 'test' | 'save') => {
+    setBusy(action)
+    setNotice(null)
+    try {
+      if (action === 'test') {
+        const result = await agentApi.testConfig(form)
+        setNotice({ type: 'success', text: `连接成功 · ${result.model} · ${result.latencyMs}ms` })
+      } else {
+        await agentApi.updateConfig(form)
+        setNotice({ type: 'success', text: '配置已保存并即时生效，后续对话与信号处理将使用新配置。' })
+        const data = await agentApi.config()
+        setConfigData(data)
+        setForm(current => ({ ...current, apiKey: '' }))
+      }
+    } catch (error) {
+      setNotice({ type: 'error', text: error instanceof ApiError ? error.message : '操作失败，请稍后重试' })
+    } finally { setBusy(null) }
+  }
+
+  const update = (key: keyof AgentConfigurationInput, value: string) => setForm(current => ({ ...current, [key]: value }))
+  const promptLayers: { key: 'soulPrompt' | 'businessPrompt' | 'responsePrompt'; title: string; badge: string; description: string; rows: number }[] = [
+    { key: 'soulPrompt', title: '角色与风格', badge: 'Soul', description: '定义 Agent 的身份、目标、表达风格与判断原则。', rows: 8 },
+    { key: 'businessPrompt', title: '业务策略', badge: 'Business', description: '定义数据优先级、商机判断方法和销售推进准则。', rows: 10 },
+    { key: 'responsePrompt', title: '回答规范', badge: 'Response', description: '定义回答结构、篇幅、语言与可读性。', rows: 6 },
+  ]
+
+  if (busy === 'load' && !configData) return (
+    <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', gap: 10 }}>
+      <LoaderCircle size={19} className="spin" /> 正在读取 Agent 配置…
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: isMobile ? '17px 16px' : '20px 22px', borderRadius: 18, background: 'linear-gradient(135deg, #f0fbff 0%, #f8fbff 52%, #f5f3ff 100%)', border: '1px solid #dceff5', display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 14, background: 'linear-gradient(135deg, #06b6d4, #2563eb)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(37,99,235,.22)' }}><BrainCircuit size={23} /></div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 17, fontWeight: 750, color: '#0f172a' }}>Harness Agent 运行配置</div>
+          <div style={{ marginTop: 4, fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>{desc}。保存前会自动连接校验，成功后立即热切换。</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 99, background: configData?.hasApiKey ? '#dcfce7' : '#fff7ed', color: configData?.hasApiKey ? '#15803d' : '#c2410c', fontSize: 12, fontWeight: 700 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor' }} />
+          {configData?.hasApiKey ? `运行中 · ${configData.model}` : '待配置'}
+        </div>
+      </div>
+
+      {notice && <div style={{ padding: '11px 14px', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, background: notice.type === 'success' ? '#ecfdf5' : '#fff1f2', color: notice.type === 'success' ? '#047857' : '#be123c', border: `1px solid ${notice.type === 'success' ? '#a7f3d0' : '#fecdd3'}` }}>
+        {notice.type === 'success' ? <CheckCircle2 size={16} /> : <Shield size={16} />}{notice.text}
+      </div>}
+
+      <section style={{ padding: isMobile ? 16 : 22, borderRadius: 18, background: 'rgba(255,255,255,.9)', border: '1px solid #e8eef2', boxShadow: '0 5px 20px rgba(30,70,90,.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18 }}><KeyRound size={18} color="#0e9dbf" /><span style={{ fontSize: 15, fontWeight: 750, color: '#0f172a' }}>模型配置</span></div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(180px,.8fr) minmax(280px,1.35fr)', gap: 14 }}>
+          <label style={{ fontSize: 12, color: '#475569', fontWeight: 650 }}>模型名称
+            <input list="agent-model-options" value={form.model} onChange={event => update('model', event.target.value)} placeholder="DeepSeek-V4-Flash" style={{ ...inputStyle, marginTop: 7, background: 'white' }} />
+            <datalist id="agent-model-options"><option value="DeepSeek-V4-Flash" /><option value="DeepSeek-V4-Pro" /><option value="deepseek-v4-flash" /><option value="deepseek-v4-pro" /></datalist>
+          </label>
+          <label style={{ fontSize: 12, color: '#475569', fontWeight: 650 }}>API 地址
+            <input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} placeholder="https://modelservice.example.com/v1" style={{ ...inputStyle, marginTop: 7, background: 'white' }} />
+          </label>
+          <label style={{ gridColumn: isMobile ? undefined : '1 / -1', fontSize: 12, color: '#475569', fontWeight: 650 }}>API Key
+            <div style={{ position: 'relative', marginTop: 7 }}>
+              <input type={showKey ? 'text' : 'password'} value={form.apiKey} onChange={event => update('apiKey', event.target.value)} placeholder={configData?.hasApiKey ? `${configData.keyHint}（留空则沿用当前 Key）` : '请输入 API Key'} autoComplete="new-password" style={{ ...inputStyle, paddingRight: 44, background: 'white' }} />
+              <button type="button" onClick={() => setShowKey(value => !value)} aria-label={showKey ? '隐藏 Key' : '显示 Key'} style={{ position: 'absolute', right: 8, top: 6, width: 32, height: 32, border: 0, background: 'transparent', color: '#64748b', cursor: 'pointer' }}>{showKey ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+            </div>
+            <span style={{ display: 'block', marginTop: 6, color: '#94a3b8', fontWeight: 400 }}>Key 采用 AES-256-GCM 加密保存，页面不会返回明文。</span>
+          </label>
+        </div>
+      </section>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+        {promptLayers.map(layer => (
+          <section key={layer.key} style={{ padding: 18, borderRadius: 18, background: 'rgba(255,255,255,.92)', border: '1px solid #e8eef2', boxShadow: '0 5px 20px rgba(30,70,90,.05)', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <div style={{ flex: 1 }}><span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 7, background: '#e6f8fc', color: '#087d9b', fontSize: 10, fontWeight: 800, letterSpacing: '.04em' }}>{layer.badge}</span><div style={{ marginTop: 8, fontSize: 15, fontWeight: 750, color: '#0f172a' }}>{layer.title}</div></div>
+              <button type="button" title="恢复默认" onClick={() => configData && update(layer.key, configData.defaults[layer.key])} style={{ width: 32, height: 32, borderRadius: 9, border: '1px solid #e2e8f0', color: '#64748b', background: 'white', cursor: 'pointer' }}><RotateCcw size={14} /></button>
+            </div>
+            <p style={{ margin: '7px 0 11px', minHeight: isMobile ? undefined : 38, fontSize: 12, lineHeight: 1.55, color: '#64748b' }}>{layer.description}</p>
+            <textarea value={form[layer.key]} onChange={event => update(layer.key, event.target.value)} rows={layer.rows} style={{ ...inputStyle, resize: 'vertical', background: '#fbfdfe', lineHeight: 1.65, fontFamily: 'inherit', minHeight: 140 }} />
+            <div style={{ marginTop: 6, textAlign: 'right', fontSize: 10, color: '#94a3b8' }}>{form[layer.key].length.toLocaleString()} 字符</div>
+          </section>
+        ))}
+      </div>
+
+      <section style={{ padding: isMobile ? 16 : '17px 20px', borderRadius: 16, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#334155', fontSize: 13, fontWeight: 750 }}><LockKeyhole size={16} />系统保护层 · 不可编辑</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 11 }}>
+          {['权限与数据隔离', '提示注入防护', '密钥与隐私保护', '飞书信号结构化协议', '高影响操作人工确认'].map(item => <span key={item} style={{ padding: '6px 10px', borderRadius: 9, background: 'white', border: '1px solid #e2e8f0', color: '#64748b', fontSize: 12 }}>{item}</span>)}
+        </div>
+      </section>
+
+      <div style={{ position: 'sticky', bottom: 12, zIndex: 5, display: 'flex', justifyContent: 'flex-end', gap: 10, padding: 10, borderRadius: 15, background: 'rgba(255,255,255,.88)', backdropFilter: 'blur(16px)', border: '1px solid rgba(226,232,240,.9)', boxShadow: '0 10px 30px rgba(15,23,42,.1)' }}>
+        <button disabled={Boolean(busy)} onClick={() => void runAction('test')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 15px', borderRadius: 10, border: '1px solid #cbd5e1', background: 'white', color: '#334155', fontSize: 13, fontWeight: 700, cursor: busy ? 'wait' : 'pointer' }}>{busy === 'test' ? <LoaderCircle className="spin" size={16} /> : <TestTube2 size={16} />}测试连接</button>
+        <button disabled={Boolean(busy)} onClick={() => void runAction('save')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 17px', borderRadius: 10, border: 0, background: 'linear-gradient(135deg, #06a8c7, #2563eb)', color: 'white', fontSize: 13, fontWeight: 750, cursor: busy ? 'wait' : 'pointer', boxShadow: '0 5px 14px rgba(37,99,235,.22)' }}>{busy === 'save' ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}保存并应用</button>
+      </div>
+    </div>
+  )
+}
+
 const allTabs = [
   { key: 'channels', label: '渠道管理',   icon: GitBranch, desc: '管理渠道伙伴信息及其登录账号', can: (r: string) => canManageChannels(r) },
   { key: 'sales',    label: '直客销售',   icon: Users,     desc: '管理 JD 直客销售人员信息、所属组别及登录账号', can: (r: string) => canManageSales(r) },
   { key: 'admins',   label: '管理员账号', icon: Shield,    desc: '管理系统管理员账号，支持多账号添加', can: (r: string) => canManageAdmins(r) },
+  { key: 'agent',    label: 'Agent 配置', icon: Bot,       desc: '配置模型连接与可开放的 Harness Prompt 分层', can: (r: string) => canManageAdmins(r) },
   { key: 'logs',     label: '操作日志',   icon: FileText,  desc: '查看所有用户的操作的记录', can: (r: string) => isAdminRole(r) },
 ]
 
@@ -1473,11 +1599,11 @@ export default function Admin() {
         <h1 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: '#111111', margin: '0 0 2px' }}>管理后台</h1>
         <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>系统账号、渠道及操作日志管理</p>
       </div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'rgba(255,255,255,0.85)', borderRadius: 14, padding: 5, width: isMobile ? '100%' : 'fit-content', boxShadow: '0 2px 10px rgba(0,0,0,0.07)' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'rgba(255,255,255,0.85)', borderRadius: 14, padding: 5, width: isMobile ? '100%' : 'fit-content', maxWidth: '100%', overflowX: 'auto', boxShadow: '0 2px 10px rgba(0,0,0,0.07)' }}>
         {tabs.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            fontSize: 13, fontWeight: 600, transition: 'all 0.2s', flex: isMobile ? 1 : undefined,
+            fontSize: 13, fontWeight: 600, transition: 'all 0.2s', flex: isMobile ? '0 0 auto' : undefined,
             background: tab === key ? 'linear-gradient(135deg, #111111, #444444)' : 'transparent',
             color: tab === key ? 'white' : '#4b5563',
             boxShadow: tab === key ? '0 3px 10px rgba(0,0,0,0.3)' : 'none',
@@ -1491,6 +1617,7 @@ export default function Admin() {
       {tab === 'channels' && <ChannelMgmt desc={currentTab.desc} />}
       {tab === 'sales' && <SalesMgmt desc={currentTab.desc} />}
       {tab === 'admins' && <AdminMgmt desc={currentTab.desc} />}
+      {tab === 'agent' && <AgentConfigSettings desc={currentTab.desc} />}
       {tab === 'logs' && <Logs desc={currentTab.desc} />}
     </div>
   )

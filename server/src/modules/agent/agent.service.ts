@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Opportunity, OpportunityStage, Prisma } from '@prisma/client'
 import { config } from '../../config.js'
 import { prisma } from '../../db.js'
+import { loadAgentRuntimeConfig, type AgentRuntimeConfig } from './agent.config.js'
 
 const SIGNAL_TYPES = ['需求更新', '需求确认', '方案确认', '报价谈判', '签约推进', '交付进展', '风险预警', '一般沟通'] as const
 type SignalType = typeof SIGNAL_TYPES[number]
@@ -30,11 +31,15 @@ function cleanJson(text: string): unknown {
   return JSON.parse(source)
 }
 
-async function runHarness(prompt: string, sessionId: string): Promise<HarnessRun> {
+async function runHarness(prompt: string, sessionId: string, runtime?: AgentRuntimeConfig): Promise<HarnessRun> {
+  const active = runtime ?? await loadAgentRuntimeConfig()
   const response = await fetch(`${config.agentHarnessUrl}/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, session_id: sessionId }),
+    body: JSON.stringify({
+      prompt, session_id: sessionId, model: active.model, base_url: active.baseUrl,
+      api_key: active.apiKey, system_prompt: active.systemPrompt,
+    }),
     signal: AbortSignal.timeout(240_000),
   })
   if (!response.ok) throw new Error(`Harness ${response.status}: ${(await response.text()).slice(0, 300)}`)
@@ -200,10 +205,20 @@ export function scheduleSignalProcessing() {
 }
 
 export async function proxyHarnessStream(prompt: string, sessionId: string, signal: AbortSignal) {
+  const active = await loadAgentRuntimeConfig()
   return fetch(`${config.agentHarnessUrl}/stream`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, session_id: sessionId }), signal,
+    body: JSON.stringify({
+      prompt, session_id: sessionId, model: active.model, base_url: active.baseUrl,
+      api_key: active.apiKey, system_prompt: active.systemPrompt,
+    }), signal,
   })
+}
+
+export async function testHarnessConfiguration(runtime: AgentRuntimeConfig) {
+  const startedAt = Date.now()
+  const result = await runHarness('仅回复：Agent 配置连接成功', `config-test-${randomUUID()}`, runtime)
+  return { ok: true, content: result.content, latencyMs: Date.now() - startedAt, model: runtime.model }
 }
 
 export function fallbackAnswer(question: string, opportunities: Opportunity[]): string {
