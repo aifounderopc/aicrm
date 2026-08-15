@@ -78,7 +78,6 @@ async function main() {
     { id: 'mock_opp_05', customerName: '海尔', companyName: '海尔集团公司', industry: '家电 / 智能硬件', stage: 'delivery', amountRange: 'above50', department: 'EC', requirement: '海尔全品类店铺运营与营销推广项目，当前已进入交付执行阶段。' },
     { id: 'mock_opp_06', customerName: '安利', companyName: '安利（中国）日用品有限公司', industry: '食品 / 饮料', stage: 'reporting', amountRange: '10to20', department: '用户体验', requirement: '安利用户体验优化项目，聚焦线上触点与内容运营，方案制作中。' },
     { id: 'mock_opp_07', customerName: '雀巢', companyName: '雀巢（中国）有限公司', industry: '食品 / 饮料', stage: 'signing', amountRange: '20to50', department: 'EC', requirement: '雀巢天猫与京东双平台运营合作，合同已进入法务审核阶段。' },
-    { id: 'mock_opp_08', customerName: '宝洁（衣清）', companyName: '宝洁（中国）营销有限公司', industry: '家居 / 家装', stage: 'reporting', amountRange: '10to20', department: '衣物清洁', requirement: '宝洁衣清系列电商精细化运营合作，目标为提升转化率与会员复购。' },
     { id: 'mock_opp_09', customerName: '宝洁（SKII）', companyName: '宝洁（中国）营销有限公司', industry: '美妆 / 护肤', stage: 'signed', amountRange: 'above50', department: '高端护肤', requirement: 'SKII 高端护肤品牌数字营销合作，已完成合同签署并进入执行。' },
     { id: 'mock_opp_11', customerName: '五粮液', companyName: '四川省宜宾五粮液股份有限公司', industry: '酒水', stage: 'reporting', amountRange: '20to50', department: '品牌部', requirement: '五粮液品牌升级与年度内容规划合作，已完成首次高层拜访。' },
     { id: 'mock_opp_12', customerName: '舍得', companyName: '舍得酒业股份有限公司', industry: '酒水', stage: 'reporting', amountRange: '10to20', department: 'EC', requirement: '舍得酒业电商运营项目，客户有明确的线上增长与内容升级需求。' },
@@ -103,6 +102,11 @@ async function main() {
     { id: 'opp_channel_yq_appliance', customerName: '格力', companyName: '珠海格力电器股份有限公司', industry: '家电 / 智能硬件', stage: 'negotiation', amountRange: '20to50', department: '市场用户研究部', requirement: '格力空调焕新需求声访 AI 调研已确认样本规模，当前推进预算与执行周期审批。', ownerId: 'ch_yqkj', ownerName: '云启科技', source: 'channel', channelId: 'c_yqkj', channelName: '云启科技', channelManagerName: '马思源' },
     { id: 'opp_channel_yq_beauty', customerName: '花西子', companyName: '浙江宜格企业管理集团有限公司', industry: '美妆 / 护肤', stage: 'contacting', amountRange: '10to20', department: '消费者运营部', requirement: '花西子彩妆用户偏好声访 AI 调研由云启科技报备，正在确认重点品类与目标人群。', ownerId: 'ch_yqkj', ownerName: '云启科技', source: 'channel', channelId: 'c_yqkj', channelName: '云启科技', channelManagerName: '马思源' },
   ]
+
+  // 清理历史种子中的重复商机；关联信号按数据库约束解除商机关联并保留审计来源。
+  await prisma.opportunity.deleteMany({
+    where: { OR: [{ id: 'mock_opp_08' }, { customerName: '宝洁（衣清）' }] },
+  })
 
   for (const [index, opp] of mockOpportunities.entries()) {
     const locked = opp.stage === 'signed' || opp.stage === 'delivery'

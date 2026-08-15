@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Plus, Trash2, Eye, CircleHelp, LoaderCircle } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Eye, CircleHelp, LoaderCircle } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, agentApi, ApiError } from '../api'
@@ -30,8 +30,8 @@ const pipeline = [
 ]
 const pipelineOrder: Record<string, number> = { reporting: 0, contacting: 1, proposal: 2, negotiation: 3, signing: 3, signed: 4, delivery: 5, closed: 6, released: 6 }
 
-type GroupBinding = { channel: string; groupId: string; groupName: string }
-type GroupInspectionConfig = { enabled: boolean; frequency: string; time: string; range: string; output: string; groups: GroupBinding[] }
+type GroupBinding = { channel: string; groupId: string; groupName: string; signalCount: number; lastSignalAt: string }
+type GroupInspectionConfig = { enabled: boolean; frequency: string; range: string; output: string; signalCount: number; latestSignalAt: string | null; groups: GroupBinding[] }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text: string }
 
 const inputStyle = {
@@ -89,9 +89,9 @@ export default function OpportunityDetail() {
   const [showContactConfirm, setShowContactConfirm] = useState(false)
   const [previewEvidence, setPreviewEvidence] = useState<{ url: string; name: string } | null>(null)
   const [showGroupInspection, setShowGroupInspection] = useState(false)
-  const [groupSaved, setGroupSaved] = useState(false)
+  const [groupLoading, setGroupLoading] = useState(true)
   const [groupError, setGroupError] = useState('')
-  const [groupConfig, setGroupConfig] = useState<GroupInspectionConfig>({ enabled: true, frequency: '每日', time: '20:00', range: '最近 24 小时消息', output: '生成商机维护报告', groups: [{ channel: '飞书', groupId: '', groupName: '' }] })
+  const [groupConfig, setGroupConfig] = useState<GroupInspectionConfig>({ enabled: true, frequency: '实时', range: '持续接收新信号', output: '自动更新商机字段与推进进展', signalCount: 0, latestSignalAt: null, groups: [] })
   const [advisorMessages, setAdvisorMessages] = useState<AdvisorMessage[]>([])
   const [advisorInput, setAdvisorInput] = useState('')
   const [advisorResponding, setAdvisorResponding] = useState(false)
@@ -137,12 +137,33 @@ export default function OpportunityDetail() {
 
   useEffect(() => {
     if (!contactOpportunityId) return
-    const saved = window.localStorage.getItem(`group-inspection-${contactOpportunityId}`)
-    if (!saved) return
-    try {
-      setGroupConfig(JSON.parse(saved) as GroupInspectionConfig)
-      setGroupSaved(true)
-    } catch { /* 忽略损坏的本地配置 */ }
+    let active = true
+    let controller: AbortController | null = null
+    const load = async () => {
+      controller?.abort()
+      controller = new AbortController()
+      try {
+        const [inspection, latestOpportunity] = await Promise.all([
+          agentApi.opportunityInspection(contactOpportunityId, controller.signal),
+          opportunityApi.detail(contactOpportunityId),
+        ])
+        if (!active) return
+        setGroupConfig(inspection)
+        setGroupError('')
+        useStore.setState(state => ({
+          opportunities: state.opportunities.map(item => item.id === latestOpportunity.id ? latestOpportunity : item),
+        }))
+      } catch (error) {
+        if (!active || controller.signal.aborted) return
+        setGroupError(error instanceof ApiError ? error.message : '实时信号同步暂时不可用')
+      } finally {
+        if (active) setGroupLoading(false)
+      }
+    }
+    setGroupLoading(true)
+    void load()
+    const timer = window.setInterval(() => { void load() }, 5_000)
+    return () => { active = false; controller?.abort(); window.clearInterval(timer) }
   }, [contactOpportunityId])
 
   if (!opp) {
@@ -174,18 +195,6 @@ export default function OpportunityDetail() {
   const submitReport = () => {
     addProgressReport({ opportunityId: opp.id, reporterId: currentUser.id, ...report })
     setShowProgressModal(false)
-  }
-
-  const saveGroupInspection = () => {
-    const invalid = groupConfig.groups.some(group => !group.groupId.trim() || !group.groupName.trim())
-    if (!groupConfig.groups.length || invalid) {
-      setGroupError('请完整填写至少一个商机群的群 ID 和群名称')
-      return
-    }
-    window.localStorage.setItem(`group-inspection-${opp.id}`, JSON.stringify(groupConfig))
-    setGroupSaved(true)
-    setGroupError('')
-    setShowGroupInspection(false)
   }
 
   const decryptContact = async () => {
@@ -451,7 +460,7 @@ export default function OpportunityDetail() {
           </article>
 
           <article className="sx-panel">
-            <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && !['released', 'closed'].includes(opp.stage) && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupSaved && groupConfig.enabled ? 'bound' : ''} onClick={() => setShowGroupInspection(true)}><Users size={13} />商机群巡检{groupSaved ? <em>{groupConfig.enabled ? `已开启 · ${groupConfig.groups.length} 个群` : '已暂停'}</em> : null}</button></div></header>
+            <header className="sx-panel-head sx-progress-head"><div><span>PROCESS TIMELINE</span><h2>商机推进</h2></div><div className="sx-head-actions">{canEdit && !['released', 'closed'].includes(opp.stage) && !opp.isFrozen && <button onClick={() => setShowProgressModal(true)}><FileText size={13} />推进信息补充</button>}<button className={groupConfig.enabled ? 'bound' : ''} onClick={() => setShowGroupInspection(true)}><Users size={13} />商机群巡检<em>{groupLoading ? '同步中' : groupConfig.groups.length ? `自动巡检 · ${groupConfig.groups.length} 个群` : '自动监听中'}</em></button></div></header>
             <div className="sx-progress-axis">
               {timelineItems.map((item, index) => <div key={item.id} className={`sx-progress-item ${item.type} ${index === 0 ? 'latest' : ''}`}><time><span>{item.date}</span><b>{item.clock}</b></time><i>{index < timelineItems.length - 1 && <span />}</i><div><header><strong>{item.title}</strong><em>{item.label}</em></header><p>{item.body}</p></div></div>)}
             </div>
@@ -475,7 +484,7 @@ export default function OpportunityDetail() {
             <section className="hero"><h3>商机解读</h3><p>{opp.customerName}当前处于{stageName(opp.stage)}阶段，{intentLevel}，健康度 {healthScore} 分。</p></section>
             <section><h3>赢单机会</h3><ul><li>{productInterests.join('、')}与客户当前需求场景匹配。</li><li>预算口径为{amountLabel(opp.amountRange)}。</li></ul></section>
             <section className="risk"><h3>风险提醒</h3><ul><li>{riskText}</li></ul></section>
-            <section><h3>下一步行动</h3><ul><li>{nextAction}</li><li>{groupSaved ? '持续关注商机群巡检报告。' : '建议配置商机群巡检，自动沉淀客户上下文。'}</li></ul></section>
+            <section><h3>下一步行动</h3><ul><li>{nextAction}</li><li>{groupConfig.groups.length ? '商机群已根据实时信号自动绑定并持续巡检。' : '实时信号监听已开启，匹配到商机群后将自动绑定并沉淀上下文。'}</li></ul></section>
             <div className="sx-advisor-quick">
               {['分析当前商机', '下一步怎么推进', '生成客户沟通话术'].map(item => <button key={item} onClick={() => askAdvisor(item)} disabled={advisorResponding}>{item}</button>)}
             </div>
@@ -499,22 +508,22 @@ export default function OpportunityDetail() {
 
       {showGroupInspection && <div className="sx-inspection-backdrop" onMouseDown={event => event.target === event.currentTarget && setShowGroupInspection(false)}>
         <section className="sx-inspection-modal">
-          <header><div><span className={groupSaved && groupConfig.enabled ? 'active' : groupSaved ? 'paused' : ''}>{groupSaved ? groupConfig.enabled ? '巡检已开启' : '巡检已暂停' : '巡检未配置'}</span><h2>商机群巡检配置</h2><p>自动读取已授权商机群的新消息，提取进展与风险，并生成需要销售确认的维护报告。</p></div><button onClick={() => setShowGroupInspection(false)} aria-label="关闭"><X size={17} /></button></header>
-          <div className="sx-inspection-summary"><div><span>关联商机</span><strong>{opp.customerName}</strong></div><div><span>当前状态</span><strong>{groupSaved ? groupConfig.enabled ? `正常巡检 · ${groupConfig.groups.length} 个群` : `已暂停 · ${groupConfig.groups.length} 个群` : '待配置'}</strong></div></div>
+          <header><div><span className="active">{groupLoading ? '正在同步' : '自动巡检已开启'}</span><h2>商机群自动巡检</h2><p>系统根据当前商机的实时连接器信号自动识别并绑定群聊，无需人工填写配置；新信号会自动更新商机字段与推进进展。</p></div><button onClick={() => setShowGroupInspection(false)} aria-label="关闭"><X size={17} /></button></header>
+          <div className="sx-inspection-summary"><div><span>关联商机</span><strong>{opp.customerName}</strong></div><div><span>当前状态</span><strong>{groupConfig.groups.length ? `实时巡检 · ${groupConfig.groups.length} 个群 · ${groupConfig.signalCount} 条信号` : '实时监听中 · 等待匹配商机群'}</strong></div></div>
           <div className="sx-group-section">
-            <div className="sx-group-head"><div><strong>绑定商机群 <b>*</b></strong><p>支持京 ME、飞书、企微、钉钉，可同时绑定多个群聊</p></div><button onClick={() => setGroupConfig(config => ({ ...config, groups: [...config.groups, { channel: '飞书', groupId: '', groupName: '' }] }))}><Plus size={13} />添加商机群</button></div>
-            <div className="sx-group-labels"><span>群渠道来源</span><span>群 ID</span><span>群名称</span><span>操作</span></div>
-            <div className="sx-group-list">{groupConfig.groups.map((group, index) => <div className="sx-group-row" key={index}><select value={group.channel} onChange={event => setGroupConfig(config => ({ ...config, groups: config.groups.map((item, itemIndex) => itemIndex === index ? { ...item, channel: event.target.value } : item) }))}>{['京 ME','飞书','企微','钉钉'].map(channel => <option key={channel}>{channel}</option>)}</select><input value={group.groupId} placeholder="请输入群 ID" onChange={event => setGroupConfig(config => ({ ...config, groups: config.groups.map((item, itemIndex) => itemIndex === index ? { ...item, groupId: event.target.value } : item) }))} /><input value={group.groupName} placeholder="请输入群名称" onChange={event => setGroupConfig(config => ({ ...config, groups: config.groups.map((item, itemIndex) => itemIndex === index ? { ...item, groupName: event.target.value } : item) }))} /><button disabled={groupConfig.groups.length === 1} onClick={() => setGroupConfig(config => ({ ...config, groups: config.groups.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={13} />移除</button></div>)}</div>
+            <div className="sx-group-head"><div><strong>自动识别的商机群</strong><p>来自已授权连接器且已可靠匹配当前商机的实时信号</p></div></div>
+            {groupConfig.groups.length ? <><div className="sx-group-labels"><span>渠道来源</span><span>群名称</span><span>有效信号</span><span>最新信号</span></div>
+            <div className="sx-group-list">{groupConfig.groups.map(group => <div className="sx-group-row readonly" key={`${group.channel}-${group.groupId}`}><span>{group.channel}</span><span title={group.groupId}>{group.groupName}</span><span>{group.signalCount} 条</span><span>{formatDate(group.lastSignalAt)}</span></div>)}</div></> : <div className="sx-group-empty">尚未发现与当前商机可靠匹配的群信号。系统会继续监听，匹配成功后自动出现在这里。</div>}
           </div>
           <div className="sx-inspection-grid">
-            <label><span>配置状态</span><select value={groupConfig.enabled ? 'enabled' : 'paused'} onChange={event => setGroupConfig(config => ({ ...config, enabled: event.target.value === 'enabled' }))}><option value="enabled">开启巡检</option><option value="paused">暂停巡检</option></select><em>暂停后保留已有配置和历史报告</em></label>
-            <label><span>巡检频率</span><select value={groupConfig.frequency} onChange={event => setGroupConfig(config => ({ ...config, frequency: event.target.value }))}>{['每日','工作日','每周一'].map(item => <option key={item}>{item}</option>)}</select><em>按所选周期自动执行</em></label>
-            <label><span>巡检时间</span><input type="time" value={groupConfig.time} onChange={event => setGroupConfig(config => ({ ...config, time: event.target.value }))} /><em>采用当前账号所在时区</em></label>
-            <label><span>消息范围</span><select value={groupConfig.range} onChange={event => setGroupConfig(config => ({ ...config, range: event.target.value }))}>{['最近 24 小时消息','上次巡检后的新消息','最近 7 天消息'].map(item => <option key={item}>{item}</option>)}</select><em>用于生成本次进展摘要</em></label>
-            <label className="wide"><span>巡检输出</span><select value={groupConfig.output} onChange={event => setGroupConfig(config => ({ ...config, output: event.target.value }))}>{['生成商机维护报告','仅生成群消息摘要','生成报告并提醒负责人'].map(item => <option key={item}>{item}</option>)}</select><em>所有字段更新仍需销售确认后生效</em></label>
+            <label><span>配置方式</span><strong>基于信号自动配置</strong><em>无需人工录入群 ID 或群名称</em></label>
+            <label><span>巡检频率</span><strong>{groupConfig.frequency}</strong><em>新信号结构化后立即同步</em></label>
+            <label><span>消息范围</span><strong>{groupConfig.range}</strong><em>仅处理当前用户有权访问的数据</em></label>
+            <label><span>最近同步</span><strong>{groupConfig.latestSignalAt ? formatDate(groupConfig.latestSignalAt) : '等待首条有效信号'}</strong><em>详情页每 5 秒自动刷新</em></label>
+            <label className="wide"><span>巡检输出</span><strong>{groupConfig.output}</strong><em>敏感和高影响字段仍遵守人工审批边界</em></label>
           </div>
           {groupError && <div className="sx-inspection-error">{groupError}</div>}
-          <footer><button className="secondary" onClick={() => setShowGroupInspection(false)}>取消</button><button className="primary" onClick={saveGroupInspection}>保存配置</button></footer>
+          <footer><button className="primary" onClick={() => setShowGroupInspection(false)}>完成</button></footer>
         </section>
       </div>}
 

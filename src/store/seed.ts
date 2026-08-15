@@ -274,26 +274,6 @@ export const seedData: AppState = {
       isFrozen: false, progressReports: [], renewalRequests: [],
     },
 
-    // 9. 宝洁（衣清）— 家护 — 初接触
-    {
-      id: 'opp9',
-      customerName: '宝洁（衣清）',
-      companyName: '宝洁（中国）销售有限公司',
-      industry: '其他',
-      source: 'direct',
-      saOwnerId: 'u_cyz', saOwnerName: '陈耀忠',
-      salesOwnerId: 'u_cyz', salesOwnerName: '陈耀忠',
-      stage: 'reporting',
-      reportedAt: d(-18), updatedAt: d(-5), releaseAt: d(12),
-      lockedPermanently: false,
-      contact: { level: '执行层', department: 'EC', contactTypes: ['email', 'wechat'], encryptedName: '武爱丽' },
-      firstContactDate: d(-20),
-      requirementDescription: '宝洁衣清系列电商运营项目，客户希望通过精细化运营提升转化率，已完成初步需求调研',
-      amountRange: '10to20',
-      evidenceFiles: [{ id: 'ef9', name: '调研记录.jpg', url: '#', uploadedAt: d(-18), uploadedBy: 'u_cyz' }],
-      isFrozen: false, progressReports: [], renewalRequests: [],
-    },
-
     // 10. 宝洁（SKII）— 美妆 — 已签约
     {
       id: 'opp10',
@@ -650,12 +630,6 @@ export const seedData: AppState = {
       title: '新商机成功报备',
       body: '「元气森林」已由范泽瑾完成报备，已进入 30 天保护期。',
       type: 'success', read: false, createdAt: d(-1), opportunityId: 'opp22',
-    },
-    {
-      id: 'ntf5', userId: 'admin1',
-      title: '疑似撞单待确认',
-      body: '「宝洁（衣清）」与「宝洁（SKII）」归属不同负责人，请确认是否存在客户重叠。',
-      type: 'error', read: false, createdAt: d(-2), opportunityId: 'opp9',
     },
   ],
 }

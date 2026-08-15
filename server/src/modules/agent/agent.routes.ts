@@ -180,6 +180,53 @@ const stageLabels: Record<string, string> = {
   signing: '报价谈判', signed: '已签约', delivery: '已交付', closed: '已关闭', released: '已释放',
 }
 
+agentRouter.get('/opportunities/:id/inspection', ah(async (req, res) => {
+  const auth = req.auth!
+  const opportunity = await prisma.opportunity.findFirst({
+    where: { id: req.params.id, ...opportunityWhere(auth) },
+    select: { id: true },
+  })
+  if (!opportunity) throw new ApiError(404, '商机不存在或无权访问')
+
+  const signals = await prisma.salesSignal.findMany({
+    where: { opportunityId: opportunity.id, confidence: { gte: 0.75 } },
+    include: { sourceMessage: { select: { chatId: true, chatName: true, createdAt: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 250,
+  })
+  const groupMap = new Map<string, {
+    channel: string
+    groupId: string
+    groupName: string
+    signalCount: number
+    lastSignalAt: Date
+  }>()
+  for (const signal of signals) {
+    const key = `${signal.source}:${signal.sourceMessage.chatId}`
+    const current = groupMap.get(key)
+    if (current) current.signalCount += 1
+    else groupMap.set(key, {
+      channel: signal.source === 'feishu' ? '飞书' : signal.source,
+      groupId: signal.sourceMessage.chatId,
+      groupName: signal.sourceMessage.chatName,
+      signalCount: 1,
+      lastSignalAt: signal.sourceMessage.createdAt,
+    })
+  }
+
+  res.json({
+    opportunityId: opportunity.id,
+    enabled: true,
+    mode: 'automatic',
+    frequency: '实时',
+    range: '持续接收新信号',
+    output: '自动更新商机字段与推进进展',
+    groups: [...groupMap.values()],
+    signalCount: signals.length,
+    latestSignalAt: signals[0]?.createdAt ?? null,
+  })
+}))
+
 function streamFallback(res: ExpressResponse, sessionId: string, answer: string) {
   res.write(`data: ${JSON.stringify({ type: 'session', sessionId })}\n\n`)
   for (const content of answer.match(/.{1,8}/gu) ?? [answer]) {

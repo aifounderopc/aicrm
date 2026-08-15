@@ -63,6 +63,24 @@ export type OpportunityAdvisorContext = {
   latestSignalAt: string | null
 }
 
+export type OpportunityInspection = {
+  opportunityId: string
+  enabled: boolean
+  mode: 'automatic'
+  frequency: string
+  range: string
+  output: string
+  groups: Array<{
+    channel: string
+    groupId: string
+    groupName: string
+    signalCount: number
+    lastSignalAt: string
+  }>
+  signalCount: number
+  latestSignalAt: string | null
+}
+
 async function streamFrom(
   path: string,
   input: { message: string; sessionId?: string },
@@ -107,6 +125,8 @@ export const agentApi = {
     return response.json() as Promise<AgentSignal[]>
   },
   opportunityContext: (opportunityId: string) => api.get<OpportunityAdvisorContext>(`/agent/opportunities/${encodeURIComponent(opportunityId)}/context`),
+  opportunityInspection: (opportunityId: string, signal?: AbortSignal) =>
+    api.get<OpportunityInspection>(`/agent/opportunities/${encodeURIComponent(opportunityId)}/inspection`, undefined, signal),
   streamChat: (input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>
     streamFrom('/agent/chat/stream', input, onEvent, signal),
   streamOpportunityChat: (opportunityId: string, input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>
