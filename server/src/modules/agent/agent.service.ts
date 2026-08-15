@@ -3,7 +3,7 @@ import type { Opportunity, OpportunityStage, Prisma } from '@prisma/client'
 import { config } from '../../config.js'
 import { prisma } from '../../db.js'
 import { encryptField, sha256 } from '../../util/crypto.js'
-import { loadAgentRuntimeConfig, type AgentRuntimeConfig } from './agent.config.js'
+import { loadAgentRuntimeConfigs, type AgentRuntimeConfig } from './agent.config.js'
 
 const SIGNAL_TYPES = ['需求更新', '需求确认', '方案确认', '报价谈判', '签约推进', '交付进展', '风险预警', '一般沟通'] as const
 type SignalType = typeof SIGNAL_TYPES[number]
@@ -67,13 +67,15 @@ function cleanJson(text: string): unknown {
 }
 
 async function runHarness(prompt: string, sessionId: string, runtime?: AgentRuntimeConfig): Promise<HarnessRun> {
-  const active = runtime ?? await loadAgentRuntimeConfig()
+  const candidates = runtime ? [runtime] : await loadAgentRuntimeConfigs()
+  const active = candidates[0]
   const response = await fetch(`${config.agentHarnessUrl}/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt, session_id: sessionId, model: active.model, base_url: active.baseUrl,
       api_key: active.apiKey, system_prompt: active.systemPrompt,
+      fallback_models: candidates.slice(1).map(item => ({ model: item.model, base_url: item.baseUrl, api_key: item.apiKey })),
     }),
     signal: AbortSignal.timeout(240_000),
   })
@@ -380,12 +382,14 @@ export function scheduleSignalProcessing() {
 }
 
 export async function proxyHarnessStream(prompt: string, sessionId: string, signal: AbortSignal) {
-  const active = await loadAgentRuntimeConfig()
+  const candidates = await loadAgentRuntimeConfigs()
+  const active = candidates[0]
   return fetch(`${config.agentHarnessUrl}/stream`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt, session_id: sessionId, model: active.model, base_url: active.baseUrl,
       api_key: active.apiKey, system_prompt: active.systemPrompt,
+      fallback_models: candidates.slice(1).map(item => ({ model: item.model, base_url: item.baseUrl, api_key: item.apiKey })),
     }), signal,
   })
 }

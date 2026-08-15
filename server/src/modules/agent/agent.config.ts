@@ -4,6 +4,8 @@ import { decryptField, encryptField } from '../../util/crypto.js'
 import { assembleAgentSystemPrompt, DEFAULT_BUSINESS_PROMPT, DEFAULT_RESPONSE_PROMPT, DEFAULT_SOUL_PROMPT } from './agent.prompts.js'
 
 export type AgentRuntimeConfig = {
+  id?: string
+  name?: string
   model: string
   baseUrl: string
   apiKey: string
@@ -13,20 +15,35 @@ export type AgentRuntimeConfig = {
   systemPrompt: string
 }
 
-export async function loadAgentRuntimeConfig(): Promise<AgentRuntimeConfig> {
-  const stored = await prisma.agentConfiguration.findUnique({ where: { id: 'default' } })
+export async function loadAgentRuntimeConfigs(): Promise<AgentRuntimeConfig[]> {
+  const [stored, models] = await Promise.all([
+    prisma.agentConfiguration.findUnique({ where: { id: 'default' } }),
+    prisma.agentModelConfiguration.findMany({
+      where: { enabled: true },
+      orderBy: [{ isDefault: 'desc' }, { priority: 'asc' }, { createdAt: 'asc' }],
+    }),
+  ])
   const editable = {
     soulPrompt: stored?.soulPrompt ?? DEFAULT_SOUL_PROMPT,
     businessPrompt: stored?.businessPrompt ?? DEFAULT_BUSINESS_PROMPT,
     responsePrompt: stored?.responsePrompt ?? DEFAULT_RESPONSE_PROMPT,
   }
-  const runtime = {
+  const systemPrompt = assembleAgentSystemPrompt(editable)
+  if (models.length) return models.map(item => ({
+    id: item.id, name: item.name, model: item.model, baseUrl: item.baseUrl,
+    apiKey: decryptField(item.encryptedApiKey), ...editable, systemPrompt,
+  }))
+  return [{
+    id: 'environment-default', name: '环境默认模型',
     model: stored?.model ?? config.deepseekModel,
     baseUrl: stored?.baseUrl ?? config.deepseekBaseUrl,
     apiKey: stored ? decryptField(stored.encryptedApiKey) : (config.deepseekApiKey ?? ''),
-    ...editable,
-  }
-  return { ...runtime, systemPrompt: assembleAgentSystemPrompt(editable) }
+    ...editable, systemPrompt,
+  }]
+}
+
+export async function loadAgentRuntimeConfig(): Promise<AgentRuntimeConfig> {
+  return (await loadAgentRuntimeConfigs())[0]
 }
 
 export async function persistEnvironmentAgentConfig(): Promise<void> {
@@ -40,6 +57,11 @@ export async function persistEnvironmentAgentConfig(): Promise<void> {
     },
     update: {},
   })
+  const existingModels = await prisma.agentModelConfiguration.count()
+  if (!existingModels) await prisma.agentModelConfiguration.create({ data: {
+    name: '环境默认模型', model: config.deepseekModel, baseUrl: config.deepseekBaseUrl,
+    encryptedApiKey: encryptField(config.deepseekApiKey), enabled: true, isDefault: true, priority: 0,
+  } })
 }
 
 export const agentPromptDefaults = {

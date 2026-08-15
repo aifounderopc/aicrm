@@ -7,7 +7,7 @@ import { isAdminRole, requireRole } from '../../middleware/roles.js'
 import { config } from '../../config.js'
 import { decryptField, encryptField } from '../../util/crypto.js'
 import { writeLog } from '../../util/audit.js'
-import { agentPromptDefaults, loadAgentRuntimeConfig, persistEnvironmentAgentConfig } from './agent.config.js'
+import { agentPromptDefaults, loadAgentRuntimeConfig, persistEnvironmentAgentConfig, type AgentRuntimeConfig } from './agent.config.js'
 import { assembleAgentSystemPrompt } from './agent.prompts.js'
 import { createSessionId, proxyHarnessStream, testHarnessConfiguration } from './agent.service.js'
 
@@ -15,43 +15,56 @@ export const agentRouter = Router()
 agentRouter.use(requireAuth)
 
 const superAdminOnly = requireRole(role => role === 'admin')
-const agentConfigSchema = z.object({
-  model: z.string().trim().min(1).max(160),
-  baseUrl: z.string().trim().url().max(500).refine(value => /^https?:\/\//.test(value), 'API 地址仅支持 HTTP(S)'),
-  apiKey: z.string().trim().max(1000).optional(),
+const promptLayersSchema = z.object({
   soulPrompt: z.string().trim().min(20).max(12_000),
   businessPrompt: z.string().trim().min(20).max(16_000),
   responsePrompt: z.string().trim().min(10).max(8_000),
 })
+const agentModelSchema = z.object({
+  id: z.string().trim().min(1).max(100).optional(),
+  name: z.string().trim().min(1).max(80),
+  model: z.string().trim().min(1).max(160),
+  baseUrl: z.string().trim().url().max(500).refine(value => /^https?:\/\//.test(value), 'API 地址仅支持 HTTP(S)'),
+  apiKey: z.string().trim().max(1000).optional(),
+  enabled: z.boolean().default(true),
+  isDefault: z.boolean().default(false),
+  priority: z.number().int().min(0).max(99).default(0),
+})
+const agentConfigSchema = promptLayersSchema.extend({ models: z.array(agentModelSchema).min(1).max(8) })
 
-async function resolveSubmittedConfig(input: z.infer<typeof agentConfigSchema>) {
-  const current = await loadAgentRuntimeConfig()
-  const editable = {
-    soulPrompt: input.soulPrompt,
-    businessPrompt: input.businessPrompt,
-    responsePrompt: input.responsePrompt,
+async function resolveSubmittedModel(input: z.infer<typeof agentModelSchema>, editable?: z.infer<typeof promptLayersSchema>): Promise<AgentRuntimeConfig> {
+  const [stored, current] = await Promise.all([
+    input.id ? prisma.agentModelConfiguration.findUnique({ where: { id: input.id } }) : null,
+    loadAgentRuntimeConfig(),
+  ])
+  const prompts = editable ?? {
+    soulPrompt: current.soulPrompt, businessPrompt: current.businessPrompt, responsePrompt: current.responsePrompt,
   }
   return {
+    id: input.id, name: input.name,
     model: input.model,
     baseUrl: input.baseUrl.replace(/\/$/, ''),
-    apiKey: input.apiKey || current.apiKey,
-    ...editable,
-    systemPrompt: assembleAgentSystemPrompt(editable),
+    apiKey: input.apiKey || (stored ? decryptField(stored.encryptedApiKey) : ''),
+    ...prompts,
+    systemPrompt: assembleAgentSystemPrompt(prompts),
   }
 }
 
 agentRouter.get('/config', superAdminOnly, ah(async (_req, res) => {
   await persistEnvironmentAgentConfig()
-  const [stored, runtime] = await Promise.all([
+  const [stored, runtime, models] = await Promise.all([
     prisma.agentConfiguration.findUnique({ where: { id: 'default' } }),
     loadAgentRuntimeConfig(),
+    prisma.agentModelConfiguration.findMany({ orderBy: [{ isDefault: 'desc' }, { priority: 'asc' }, { createdAt: 'asc' }] }),
   ])
   res.json({
     provider: stored?.provider ?? 'deepseek-harness',
-    model: runtime.model,
-    baseUrl: runtime.baseUrl,
-    hasApiKey: Boolean(runtime.apiKey),
-    keyHint: runtime.apiKey ? '••••••••••••' : '',
+    models: models.map(item => ({
+      id: item.id, name: item.name, model: item.model, baseUrl: item.baseUrl,
+      hasApiKey: Boolean(item.encryptedApiKey), keyHint: item.encryptedApiKey ? '••••••••••••' : '',
+      enabled: item.enabled, isDefault: item.isDefault, priority: item.priority,
+      lastStatus: item.lastStatus, lastError: item.lastError, lastCheckedAt: item.lastCheckedAt,
+    })),
     soulPrompt: runtime.soulPrompt,
     businessPrompt: runtime.businessPrompt,
     responsePrompt: runtime.responsePrompt,
@@ -60,48 +73,70 @@ agentRouter.get('/config', superAdminOnly, ah(async (_req, res) => {
   })
 }))
 
-agentRouter.post('/config/test', superAdminOnly, ah(async (req, res) => {
-  const runtime = await resolveSubmittedConfig(agentConfigSchema.parse(req.body))
+agentRouter.post('/config/models/test', superAdminOnly, ah(async (req, res) => {
+  const input = agentModelSchema.parse(req.body)
+  const runtime = await resolveSubmittedModel(input)
   if (!runtime.apiKey) throw new ApiError(400, '请填写 API Key')
   try {
-    res.json(await testHarnessConfiguration(runtime))
+    const result = await testHarnessConfiguration(runtime)
+    if (input.id) await prisma.agentModelConfiguration.update({
+      where: { id: input.id }, data: { lastStatus: 'healthy', lastError: null, lastCheckedAt: new Date() },
+    }).catch(() => undefined)
+    res.json(result)
   } catch (error) {
-    throw new ApiError(502, `模型连接失败：${error instanceof Error ? error.message.slice(0, 260) : '未知错误'}`)
+    const message = error instanceof Error ? error.message.slice(0, 260) : '未知错误'
+    if (input.id) await prisma.agentModelConfiguration.update({
+      where: { id: input.id }, data: { lastStatus: 'failed', lastError: message, lastCheckedAt: new Date() },
+    }).catch(() => undefined)
+    throw new ApiError(502, `模型连接失败：${message}`)
   }
 }))
 
 agentRouter.put('/config', superAdminOnly, ah(async (req, res) => {
   const input = agentConfigSchema.parse(req.body)
-  const runtime = await resolveSubmittedConfig(input)
-  if (!runtime.apiKey) throw new ApiError(400, '请填写 API Key')
-  let testResult
-  try {
-    testResult = await testHarnessConfiguration(runtime)
-  } catch (error) {
-    throw new ApiError(502, `保存前连接校验失败：${error instanceof Error ? error.message.slice(0, 260) : '未知错误'}`)
-  }
+  const enabled = input.models.filter(item => item.enabled)
+  if (!enabled.length) throw new ApiError(400, '至少启用一个模型')
+  if (enabled.filter(item => item.isDefault).length !== 1) throw new ApiError(400, '必须且只能设置一个启用中的默认模型')
+  const editable = { soulPrompt: input.soulPrompt, businessPrompt: input.businessPrompt, responsePrompt: input.responsePrompt }
+  const resolved = await Promise.all(input.models.map(item => resolveSubmittedModel(item, editable)))
+  if (resolved.some(item => !item.apiKey)) throw new ApiError(400, '每个模型都必须配置 API Key')
+  const defaultIndex = input.models.findIndex(item => item.enabled && item.isDefault)
+  const defaultRuntime = resolved[defaultIndex]
   const auth = req.auth!
-  const saved = await prisma.agentConfiguration.upsert({
-    where: { id: 'default' },
-    create: {
-      id: 'default', model: runtime.model, baseUrl: runtime.baseUrl,
-      encryptedApiKey: encryptField(runtime.apiKey), soulPrompt: runtime.soulPrompt,
-      businessPrompt: runtime.businessPrompt, responsePrompt: runtime.responsePrompt,
-      updatedBy: auth.authUserId,
-    },
-    update: {
-      model: runtime.model, baseUrl: runtime.baseUrl,
-      encryptedApiKey: encryptField(runtime.apiKey), soulPrompt: runtime.soulPrompt,
-      businessPrompt: runtime.businessPrompt, responsePrompt: runtime.responsePrompt,
-      updatedBy: auth.authUserId,
-    },
+  const saved = await prisma.$transaction(async tx => {
+    const configRow = await tx.agentConfiguration.upsert({
+      where: { id: 'default' },
+      create: {
+        id: 'default', model: defaultRuntime.model, baseUrl: defaultRuntime.baseUrl,
+        encryptedApiKey: encryptField(defaultRuntime.apiKey), ...editable, updatedBy: auth.authUserId,
+      },
+      update: {
+        model: defaultRuntime.model, baseUrl: defaultRuntime.baseUrl,
+        encryptedApiKey: encryptField(defaultRuntime.apiKey), ...editable, updatedBy: auth.authUserId,
+      },
+    })
+    const retainedIds: string[] = []
+    for (let index = 0; index < input.models.length; index += 1) {
+      const item = input.models[index]
+      const runtime = resolved[index]
+      const data = {
+        name: item.name, model: item.model, baseUrl: runtime.baseUrl, encryptedApiKey: encryptField(runtime.apiKey),
+        enabled: item.enabled, isDefault: item.enabled && item.isDefault, priority: item.priority, updatedBy: auth.authUserId,
+      }
+      const row = item.id
+        ? await tx.agentModelConfiguration.update({ where: { id: item.id }, data })
+        : await tx.agentModelConfiguration.create({ data })
+      retainedIds.push(row.id)
+    }
+    await tx.agentModelConfiguration.deleteMany({ where: { id: { notIn: retainedIds } } })
+    return configRow
   })
   await writeLog(req, {
     actorId: auth.authUserId, actorName: auth.user.name, action: '更新 Agent 配置',
-    detail: `模型 ${runtime.model}，API ${runtime.baseUrl}；配置已通过连接校验并即时生效`,
+    detail: `保存 ${input.models.length} 个模型配置；默认模型 ${defaultRuntime.model}，已启用 ${enabled.length} 个自动故障切换候选`,
     targetType: 'agent_configuration', targetId: saved.id,
   })
-  res.json({ ok: true, model: saved.model, baseUrl: saved.baseUrl, updatedAt: saved.updatedAt, test: testResult })
+  res.json({ ok: true, models: input.models.length, defaultModel: saved.model, updatedAt: saved.updatedAt })
 }))
 
 function opportunityWhere(auth: NonNullable<Express.Request['auth']>) {

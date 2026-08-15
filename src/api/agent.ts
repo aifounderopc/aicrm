@@ -31,20 +31,31 @@ export type AgentPromptLayers = {
   responsePrompt: string
 }
 
-export type AgentConfiguration = AgentPromptLayers & {
-  provider: string
+export type AgentModelConfiguration = {
+  id?: string
+  name: string
   model: string
   baseUrl: string
-  hasApiKey: boolean
-  keyHint: string
+  apiKey?: string
+  hasApiKey?: boolean
+  keyHint?: string
+  enabled: boolean
+  isDefault: boolean
+  priority: number
+  lastStatus?: 'healthy' | 'failed' | null
+  lastError?: string | null
+  lastCheckedAt?: string | null
+}
+
+export type AgentConfiguration = AgentPromptLayers & {
+  provider: string
+  models: AgentModelConfiguration[]
   defaults: AgentPromptLayers
   updatedAt: string | null
 }
 
 export type AgentConfigurationInput = AgentPromptLayers & {
-  model: string
-  baseUrl: string
-  apiKey?: string
+  models: AgentModelConfiguration[]
 }
 
 export type AgentStreamEvent =
@@ -130,8 +141,8 @@ async function streamFrom(
 export const agentApi = {
   dashboard: () => api.get<AgentDashboard>('/agent/dashboard'),
   config: () => api.get<AgentConfiguration>('/agent/config'),
-  testConfig: (input: AgentConfigurationInput) => api.post<{ ok: boolean; content: string; latencyMs: number; model: string }>('/agent/config/test', input),
-  updateConfig: (input: AgentConfigurationInput) => api.put<{ ok: boolean; model: string; baseUrl: string; updatedAt: string }>('/agent/config', input),
+  testModel: (input: AgentModelConfiguration) => api.post<{ ok: boolean; content: string; latencyMs: number; model: string }>('/agent/config/models/test', input),
+  updateConfig: (input: AgentConfigurationInput) => api.put<{ ok: boolean; models: number; defaultModel: string; updatedAt: string }>('/agent/config', input),
   status: async () => {
     const response = await fetch(buildApiUrl('/agent/status'), { credentials: 'include' })
     if (!response.ok) throw new ApiError('无法读取 Agent 状态', response.status)

@@ -333,3 +333,23 @@ model AgentConfiguration {
 
   @@map("agent_configurations")
 }
+
+model AgentModelConfiguration {
+  id              String   @id @default(cuid())
+  name            String
+  model           String
+  baseUrl         String   @map("base_url")
+  encryptedApiKey String   @map("encrypted_api_key")
+  enabled         Boolean  @default(true)
+  isDefault       Boolean  @default(false) @map("is_default")
+  priority        Int      @default(0)
+  lastStatus      String?  @map("last_status")
+  lastError       String?  @map("last_error")
+  lastCheckedAt   DateTime? @map("last_checked_at")
+  updatedBy       String?  @map("updated_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([enabled, isDefault, priority])
+  @@map("agent_model_configurations")
+}

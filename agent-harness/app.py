@@ -27,6 +27,12 @@ _harness: DeepSeekHarness | None = None
 _harness_signature: tuple[str, str, str, str] | None = None
 
 
+class ModelCandidate(BaseModel):
+    model: str = Field(min_length=1, max_length=160)
+    base_url: str = Field(min_length=1, max_length=500)
+    api_key: str = Field(min_length=1, max_length=1000)
+
+
 class RunInput(BaseModel):
     prompt: str = Field(min_length=1, max_length=120_000)
     session_id: str = Field(min_length=1, max_length=160)
@@ -34,6 +40,15 @@ class RunInput(BaseModel):
     base_url: str | None = Field(default=None, min_length=1, max_length=500)
     api_key: str | None = Field(default=None, min_length=1, max_length=1000)
     system_prompt: str | None = Field(default=None, min_length=1, max_length=60_000)
+    fallback_models: list[ModelCandidate] = Field(default_factory=list, max_length=8)
+
+
+def candidate_inputs(body: RunInput) -> list[RunInput]:
+    candidates = [body]
+    candidates.extend(body.model_copy(update={
+        "model": item.model, "base_url": item.base_url, "api_key": item.api_key, "fallback_models": [],
+    }) for item in body.fallback_models)
+    return candidates
 
 
 def resolved_config(body: RunInput) -> tuple[str, str, str, str]:
@@ -92,13 +107,20 @@ def health() -> dict[str, Any]:
 
 @app.post("/run")
 def run_agent(body: RunInput) -> dict[str, Any]:
-    with _lock:
-        result = harness(body).run(body.prompt, session_id=body.session_id)
-    return {
-        "sessionId": result.session_id,
-        "content": result.final_response,
-        "finishReason": result.finish_reason,
-    }
+    errors: list[str] = []
+    for candidate in candidate_inputs(body):
+        try:
+            with _lock:
+                result = harness(candidate).run(candidate.prompt, session_id=candidate.session_id)
+            return {
+                "sessionId": result.session_id,
+                "content": result.final_response,
+                "finishReason": result.finish_reason,
+                "model": candidate.model or MODEL,
+            }
+        except Exception as exc:
+            errors.append(str(exc)[:180])
+    raise HTTPException(status_code=502, detail=f"All configured models failed: {' | '.join(errors)}")
 
 
 def sse(payload: dict[str, Any]) -> str:
@@ -129,16 +151,24 @@ def stream_agent(body: RunInput) -> StreamingResponse:
                     emitted = True
                     events.put({"type": "delta", "content": text})
 
-        try:
-            with _lock:
-                result = harness(body).run(body.prompt, session_id=body.session_id, on_notification=on_notification)
-            if not emitted and result.final_response:
-                events.put({"type": "delta", "content": result.final_response})
-            events.put({"type": "done", "sessionId": result.session_id, "finishReason": result.finish_reason})
-        except Exception as exc:  # runtime/network errors become a typed SSE event
-            events.put({"type": "error", "message": str(exc)[:500]})
-        finally:
-            events.put(None)
+        errors: list[str] = []
+        candidates = candidate_inputs(body)
+        for index, candidate in enumerate(candidates):
+            emitted = False
+            try:
+                with _lock:
+                    result = harness(candidate).run(candidate.prompt, session_id=candidate.session_id, on_notification=on_notification)
+                if not emitted and result.final_response:
+                    events.put({"type": "delta", "content": result.final_response})
+                events.put({"type": "done", "sessionId": result.session_id, "finishReason": result.finish_reason, "model": candidate.model or MODEL, "fallbackUsed": index > 0})
+                events.put(None)
+                return
+            except Exception as exc:
+                errors.append(str(exc)[:180])
+                if index < len(candidates) - 1:
+                    events.put({"type": "progress", "stage": "reasoning", "label": f"模型 {candidate.model or MODEL} 暂不可用，正在切换备用模型…"})
+        events.put({"type": "error", "message": f"All configured models failed: {' | '.join(errors)}"[:500]})
+        events.put(None)
 
     threading.Thread(target=worker, daemon=True).start()
 

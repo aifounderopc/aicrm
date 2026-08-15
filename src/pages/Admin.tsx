@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, validatePassword, passwordStrength, PASSWORD_RULE_HINT, roleName, isAdminRole, canManageChannels, canManageSales, canManageAdmins } from '../utils'
 import type { Opportunity } from '../types'
-import { Shield, Users, FileText, GitBranch, UserCheck, Bot, BrainCircuit, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, RotateCcw, Save, TestTube2 } from 'lucide-react'
+import { Shield, Users, FileText, GitBranch, UserCheck, Bot, BrainCircuit, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Plus, RotateCcw, Save, TestTube2, Trash2 } from 'lucide-react'
 import { useMobile } from '../hooks/useMobile'
-import { agentApi, type AgentConfiguration, type AgentConfigurationInput } from '../api/agent'
+import { agentApi, type AgentConfiguration, type AgentConfigurationInput, type AgentModelConfiguration } from '../api/agent'
 import { ApiError } from '../api/client'
 
 const thStyle: React.CSSProperties = {
@@ -1448,9 +1448,9 @@ function Logs({ desc }: { desc: string }) {
 function AgentConfigSettings({ desc }: { desc: string }) {
   const isMobile = useMobile()
   const [configData, setConfigData] = useState<AgentConfiguration | null>(null)
-  const [form, setForm] = useState<AgentConfigurationInput>({ model: '', baseUrl: '', apiKey: '', soulPrompt: '', businessPrompt: '', responsePrompt: '' })
-  const [showKey, setShowKey] = useState(false)
-  const [busy, setBusy] = useState<'load' | 'test' | 'save' | null>('load')
+  const [form, setForm] = useState<AgentConfigurationInput>({ models: [], soulPrompt: '', businessPrompt: '', responsePrompt: '' })
+  const [showKeys, setShowKeys] = useState<Record<number, boolean>>({})
+  const [busy, setBusy] = useState<string | null>('load')
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const load = async () => {
@@ -1459,7 +1459,7 @@ function AgentConfigSettings({ desc }: { desc: string }) {
       const data = await agentApi.config()
       setConfigData(data)
       setForm({
-        model: data.model, baseUrl: data.baseUrl, apiKey: '',
+        models: data.models.map(model => ({ ...model, apiKey: '' })),
         soulPrompt: data.soulPrompt, businessPrompt: data.businessPrompt, responsePrompt: data.responsePrompt,
       })
     } catch (error) {
@@ -1469,26 +1469,53 @@ function AgentConfigSettings({ desc }: { desc: string }) {
 
   useEffect(() => { void load() }, [])
 
-  const runAction = async (action: 'test' | 'save') => {
-    setBusy(action)
+  const testModel = async (index: number) => {
+    setBusy(`test-${index}`)
     setNotice(null)
     try {
-      if (action === 'test') {
-        const result = await agentApi.testConfig(form)
-        setNotice({ type: 'success', text: `连接成功 · ${result.model} · ${result.latencyMs}ms` })
-      } else {
-        await agentApi.updateConfig(form)
-        setNotice({ type: 'success', text: '配置已保存并即时生效，后续对话与信号处理将使用新配置。' })
-        const data = await agentApi.config()
-        setConfigData(data)
-        setForm(current => ({ ...current, apiKey: '' }))
-      }
+      const result = await agentApi.testModel(form.models[index])
+      setNotice({ type: 'success', text: `连接成功 · ${result.model} · ${result.latencyMs}ms` })
     } catch (error) {
-      setNotice({ type: 'error', text: error instanceof ApiError ? error.message : '操作失败，请稍后重试' })
+      setNotice({ type: 'error', text: error instanceof ApiError ? error.message : '模型连接失败，请检查地址、模型和 Key' })
     } finally { setBusy(null) }
   }
 
-  const update = (key: keyof AgentConfigurationInput, value: string) => setForm(current => ({ ...current, [key]: value }))
+  const save = async () => {
+    setBusy('save')
+    setNotice(null)
+    try {
+      await agentApi.updateConfig(form)
+      setNotice({ type: 'success', text: '配置已保存并即时生效；默认模型不可用时将按优先级自动切换。' })
+      await load()
+    } catch (error) {
+      setNotice({ type: 'error', text: error instanceof ApiError ? error.message : '保存失败，请稍后重试' })
+      setBusy(null)
+    }
+  }
+
+  const updatePrompt = (key: keyof AgentPromptValues, value: string) => setForm(current => ({ ...current, [key]: value }))
+  const updateModel = (index: number, patch: Partial<AgentModelConfiguration>) => setForm(current => ({
+    ...current,
+    models: current.models.map((model, modelIndex) => modelIndex === index ? { ...model, ...patch } : model),
+  }))
+  const addModel = () => setForm(current => ({
+    ...current,
+    models: [...current.models, {
+      name: `备用模型 ${current.models.length + 1}`, model: '', baseUrl: '', apiKey: '', enabled: true,
+      isDefault: current.models.length === 0, priority: current.models.length * 10,
+    }],
+  }))
+  const removeModel = (index: number) => setForm(current => {
+    const removedDefault = current.models[index]?.isDefault
+    const models = current.models.filter((_, modelIndex) => modelIndex !== index)
+    if (removedDefault && models[0]) models[0] = { ...models[0], enabled: true, isDefault: true }
+    return { ...current, models }
+  })
+  const setDefaultModel = (index: number) => setForm(current => ({
+    ...current,
+    models: current.models.map((model, modelIndex) => ({ ...model, enabled: modelIndex === index ? true : model.enabled, isDefault: modelIndex === index })),
+  }))
+  type AgentPromptValues = Pick<AgentConfigurationInput, 'soulPrompt' | 'businessPrompt' | 'responsePrompt'>
   const promptLayers: { key: 'soulPrompt' | 'businessPrompt' | 'responsePrompt'; title: string; badge: string; description: string; rows: number }[] = [
     { key: 'soulPrompt', title: '角色与风格', badge: 'Soul', description: '定义 Agent 的身份、目标、表达风格与判断原则。', rows: 8 },
     { key: 'businessPrompt', title: '业务策略', badge: 'Business', description: '定义数据优先级、商机判断方法和销售推进准则。', rows: 10 },
@@ -1509,9 +1536,9 @@ function AgentConfigSettings({ desc }: { desc: string }) {
           <div style={{ fontSize: 17, fontWeight: 750, color: '#0f172a' }}>Harness Agent 运行配置</div>
           <div style={{ marginTop: 4, fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>{desc}。保存前会自动连接校验，成功后立即热切换。</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 99, background: configData?.hasApiKey ? '#dcfce7' : '#fff7ed', color: configData?.hasApiKey ? '#15803d' : '#c2410c', fontSize: 12, fontWeight: 700 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 99, background: configData?.models.some(model => model.enabled && model.hasApiKey) ? '#dcfce7' : '#fff7ed', color: configData?.models.some(model => model.enabled && model.hasApiKey) ? '#15803d' : '#c2410c', fontSize: 12, fontWeight: 700 }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor' }} />
-          {configData?.hasApiKey ? `运行中 · ${configData.model}` : '待配置'}
+          {configData?.models.length ? `默认：${configData.models.find(model => model.isDefault)?.name ?? '未设置'} · ${configData.models.filter(model => model.enabled).length} 个启用` : '待配置'}
         </div>
       </div>
 
@@ -1520,23 +1547,37 @@ function AgentConfigSettings({ desc }: { desc: string }) {
       </div>}
 
       <section style={{ padding: isMobile ? 16 : 22, borderRadius: 18, background: 'rgba(255,255,255,.9)', border: '1px solid #e8eef2', boxShadow: '0 5px 20px rgba(30,70,90,.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18 }}><KeyRound size={18} color="#0e9dbf" /><span style={{ fontSize: 15, fontWeight: 750, color: '#0f172a' }}>模型配置</span></div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(180px,.8fr) minmax(280px,1.35fr)', gap: 14 }}>
-          <label style={{ fontSize: 12, color: '#475569', fontWeight: 650 }}>模型名称
-            <input list="agent-model-options" value={form.model} onChange={event => update('model', event.target.value)} placeholder="DeepSeek-V4-Flash" style={{ ...inputStyle, marginTop: 7, background: 'white' }} />
-            <datalist id="agent-model-options"><option value="DeepSeek-V4-Flash" /><option value="DeepSeek-V4-Pro" /><option value="deepseek-v4-flash" /><option value="deepseek-v4-pro" /></datalist>
-          </label>
-          <label style={{ fontSize: 12, color: '#475569', fontWeight: 650 }}>API 地址
-            <input value={form.baseUrl} onChange={event => update('baseUrl', event.target.value)} placeholder="https://modelservice.example.com/v1" style={{ ...inputStyle, marginTop: 7, background: 'white' }} />
-          </label>
-          <label style={{ gridColumn: isMobile ? undefined : '1 / -1', fontSize: 12, color: '#475569', fontWeight: 650 }}>API Key
-            <div style={{ position: 'relative', marginTop: 7 }}>
-              <input type={showKey ? 'text' : 'password'} value={form.apiKey} onChange={event => update('apiKey', event.target.value)} placeholder={configData?.hasApiKey ? `${configData.keyHint}（留空则沿用当前 Key）` : '请输入 API Key'} autoComplete="new-password" style={{ ...inputStyle, paddingRight: 44, background: 'white' }} />
-              <button type="button" onClick={() => setShowKey(value => !value)} aria-label={showKey ? '隐藏 Key' : '显示 Key'} style={{ position: 'absolute', right: 8, top: 6, width: 32, height: 32, border: 0, background: 'transparent', color: '#64748b', cursor: 'pointer' }}>{showKey ? <EyeOff size={17} /> : <Eye size={17} />}</button>
-            </div>
-            <span style={{ display: 'block', marginTop: 6, color: '#94a3b8', fontWeight: 400 }}>Key 采用 AES-256-GCM 加密保存，页面不会返回明文。</span>
-          </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 16 }}>
+          <KeyRound size={18} color="#0e9dbf" /><span style={{ flex: 1, fontSize: 15, fontWeight: 750, color: '#0f172a' }}>模型配置与故障切换</span>
+          <button type="button" onClick={addModel} disabled={Boolean(busy) || form.models.length >= 8} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 11px', borderRadius: 9, border: '1px solid #bae6fd', background: '#f0f9ff', color: '#0369a1', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}><Plus size={14} />新增模型</button>
         </div>
+        <div style={{ marginBottom: 14, fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>请求先使用默认模型；失败时按优先级数值从小到大依次尝试已启用的备用模型。</div>
+        <datalist id="agent-model-options"><option value="deepseek-v4-flash-0731" /><option value="DeepSeek-V4-Flash" /><option value="DeepSeek-V4-Pro" /><option value="deepseek-v4-flash" /></datalist>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+          {form.models.map((model, index) => (
+            <div key={model.id ?? `new-${index}`} style={{ padding: 15, borderRadius: 14, border: model.isDefault ? '1.5px solid #38bdf8' : '1px solid #e2e8f0', background: model.isDefault ? '#f6fcff' : '#fbfdfe' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 13, flexWrap: 'wrap' }}>
+                <input value={model.name} onChange={event => updateModel(index, { name: event.target.value })} placeholder="配置名称" style={{ ...inputStyle, width: isMobile ? '100%' : 260, background: 'white', fontWeight: 650 }} />
+                <button type="button" onClick={() => setDefaultModel(index)} style={{ padding: '6px 9px', borderRadius: 99, border: model.isDefault ? '1px solid #7dd3fc' : '1px solid #cbd5e1', background: model.isDefault ? '#e0f2fe' : 'white', color: model.isDefault ? '#0369a1' : '#64748b', fontSize: 11, fontWeight: 750, cursor: 'pointer' }}>{model.isDefault ? '默认模型' : '设为默认'}</button>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', cursor: 'pointer' }}><input type="checkbox" checked={model.enabled} onChange={event => updateModel(index, { enabled: event.target.checked })} disabled={model.isDefault} />启用</label>
+                {model.lastStatus && <span title={model.lastError ?? undefined} style={{ marginLeft: isMobile ? 0 : 'auto', padding: '5px 8px', borderRadius: 99, background: model.lastStatus === 'healthy' ? '#dcfce7' : '#ffe4e6', color: model.lastStatus === 'healthy' ? '#15803d' : '#be123c', fontSize: 11, fontWeight: 700 }}>{model.lastStatus === 'healthy' ? '连接正常' : '连接失败'}</span>}
+                <button type="button" title="删除配置" disabled={form.models.length <= 1 || Boolean(busy)} onClick={() => removeModel(index)} style={{ width: 31, height: 31, marginLeft: model.lastStatus ? 0 : (isMobile ? 0 : 'auto'), borderRadius: 8, border: '1px solid #fecdd3', background: 'white', color: '#e11d48', cursor: 'pointer' }}><Trash2 size={14} /></button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(170px,.8fr) minmax(260px,1.4fr) 90px', gap: 11 }}>
+                <label style={{ fontSize: 12, color: '#475569', fontWeight: 650 }}>模型名称<input list="agent-model-options" value={model.model} onChange={event => updateModel(index, { model: event.target.value })} placeholder="deepseek-v4-flash-0731" style={{ ...inputStyle, marginTop: 6, background: 'white' }} /></label>
+                <label style={{ fontSize: 12, color: '#475569', fontWeight: 650 }}>API 地址<input value={model.baseUrl} onChange={event => updateModel(index, { baseUrl: event.target.value })} placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" style={{ ...inputStyle, marginTop: 6, background: 'white' }} /></label>
+                <label style={{ fontSize: 12, color: '#475569', fontWeight: 650 }}>优先级<input type="number" min={0} max={999} value={model.priority} onChange={event => updateModel(index, { priority: Number(event.target.value) })} style={{ ...inputStyle, marginTop: 6, background: 'white' }} /></label>
+                <label style={{ gridColumn: isMobile ? undefined : '1 / -1', fontSize: 12, color: '#475569', fontWeight: 650 }}>API Key
+                  <div style={{ display: 'flex', gap: 9, marginTop: 6 }}>
+                    <div style={{ position: 'relative', flex: 1 }}><input type={showKeys[index] ? 'text' : 'password'} value={model.apiKey ?? ''} onChange={event => updateModel(index, { apiKey: event.target.value })} placeholder={model.hasApiKey ? `${model.keyHint ?? '已配置'}（留空则沿用）` : '请输入 API Key'} autoComplete="new-password" style={{ ...inputStyle, paddingRight: 44, background: 'white' }} /><button type="button" onClick={() => setShowKeys(value => ({ ...value, [index]: !value[index] }))} aria-label="显示或隐藏 Key" style={{ position: 'absolute', right: 8, top: 5, width: 32, height: 32, border: 0, background: 'transparent', color: '#64748b', cursor: 'pointer' }}>{showKeys[index] ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+                    <button type="button" disabled={Boolean(busy)} onClick={() => void testModel(index)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', borderRadius: 9, border: '1px solid #cbd5e1', background: 'white', color: '#334155', fontSize: 12, fontWeight: 700, cursor: busy ? 'wait' : 'pointer' }}>{busy === `test-${index}` ? <LoaderCircle className="spin" size={15} /> : <TestTube2 size={15} />}测试</button>
+                  </div>
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 10, color: '#94a3b8', fontSize: 11 }}>所有 Key 均采用 AES-256-GCM 加密保存，页面不会返回明文。</div>
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
@@ -1544,10 +1585,10 @@ function AgentConfigSettings({ desc }: { desc: string }) {
           <section key={layer.key} style={{ padding: 18, borderRadius: 18, background: 'rgba(255,255,255,.92)', border: '1px solid #e8eef2', boxShadow: '0 5px 20px rgba(30,70,90,.05)', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <div style={{ flex: 1 }}><span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 7, background: '#e6f8fc', color: '#087d9b', fontSize: 10, fontWeight: 800, letterSpacing: '.04em' }}>{layer.badge}</span><div style={{ marginTop: 8, fontSize: 15, fontWeight: 750, color: '#0f172a' }}>{layer.title}</div></div>
-              <button type="button" title="恢复默认" onClick={() => configData && update(layer.key, configData.defaults[layer.key])} style={{ width: 32, height: 32, borderRadius: 9, border: '1px solid #e2e8f0', color: '#64748b', background: 'white', cursor: 'pointer' }}><RotateCcw size={14} /></button>
+              <button type="button" title="恢复默认" onClick={() => configData && updatePrompt(layer.key, configData.defaults[layer.key])} style={{ width: 32, height: 32, borderRadius: 9, border: '1px solid #e2e8f0', color: '#64748b', background: 'white', cursor: 'pointer' }}><RotateCcw size={14} /></button>
             </div>
             <p style={{ margin: '7px 0 11px', minHeight: isMobile ? undefined : 38, fontSize: 12, lineHeight: 1.55, color: '#64748b' }}>{layer.description}</p>
-            <textarea value={form[layer.key]} onChange={event => update(layer.key, event.target.value)} rows={layer.rows} style={{ ...inputStyle, resize: 'vertical', background: '#fbfdfe', lineHeight: 1.65, fontFamily: 'inherit', minHeight: 140 }} />
+            <textarea value={form[layer.key]} onChange={event => updatePrompt(layer.key, event.target.value)} rows={layer.rows} style={{ ...inputStyle, resize: 'vertical', background: '#fbfdfe', lineHeight: 1.65, fontFamily: 'inherit', minHeight: 140 }} />
             <div style={{ marginTop: 6, textAlign: 'right', fontSize: 10, color: '#94a3b8' }}>{form[layer.key].length.toLocaleString()} 字符</div>
           </section>
         ))}
@@ -1561,8 +1602,7 @@ function AgentConfigSettings({ desc }: { desc: string }) {
       </section>
 
       <div style={{ position: 'sticky', bottom: 12, zIndex: 5, display: 'flex', justifyContent: 'flex-end', gap: 10, padding: 10, borderRadius: 15, background: 'rgba(255,255,255,.88)', backdropFilter: 'blur(16px)', border: '1px solid rgba(226,232,240,.9)', boxShadow: '0 10px 30px rgba(15,23,42,.1)' }}>
-        <button disabled={Boolean(busy)} onClick={() => void runAction('test')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 15px', borderRadius: 10, border: '1px solid #cbd5e1', background: 'white', color: '#334155', fontSize: 13, fontWeight: 700, cursor: busy ? 'wait' : 'pointer' }}>{busy === 'test' ? <LoaderCircle className="spin" size={16} /> : <TestTube2 size={16} />}测试连接</button>
-        <button disabled={Boolean(busy)} onClick={() => void runAction('save')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 17px', borderRadius: 10, border: 0, background: 'linear-gradient(135deg, #06a8c7, #2563eb)', color: 'white', fontSize: 13, fontWeight: 750, cursor: busy ? 'wait' : 'pointer', boxShadow: '0 5px 14px rgba(37,99,235,.22)' }}>{busy === 'save' ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}保存并应用</button>
+        <button disabled={Boolean(busy) || form.models.length === 0} onClick={() => void save()} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 17px', borderRadius: 10, border: 0, background: 'linear-gradient(135deg, #06a8c7, #2563eb)', color: 'white', fontSize: 13, fontWeight: 750, cursor: busy ? 'wait' : 'pointer', boxShadow: '0 5px 14px rgba(37,99,235,.22)' }}>{busy === 'save' ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}保存并应用</button>
       </div>
     </div>
   )
