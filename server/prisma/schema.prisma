@@ -287,6 +287,7 @@ model SalesSignal {
   confidence         Float         @default(0)
   extractedData      Json          @map("extracted_data")
   processingSource   String        @default("rules") @map("processing_source")
+  processingVersion  Int           @default(1) @map("processing_version")
   opportunityUpdated Boolean       @default(false) @map("opportunity_updated")
   createdAt          DateTime      @default(now()) @map("created_at")
   processedAt        DateTime      @default(now()) @map("processed_at")

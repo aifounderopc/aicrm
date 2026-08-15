@@ -30,7 +30,11 @@ signalType 仅可为：需求更新、需求确认、方案确认、报价谈判
 matchedOpportunityId 必须来自候选商机 ID；不能可靠匹配时为 null。confidence 为 0 到 1。
 suggestedStage 仅可为 null、contacting、proposal、negotiation、signed、delivery、closed。
 requirementDescription 仅保留客户需求事实，最大 120 个汉字。productInterests 仅可包含“JM 声访”“JM 外呼”。
-完整格式：{"signalType":"需求更新","matchedOpportunityId":null,"confidence":0,"summary":"","suggestedStage":null,"requirementDescription":null,"productInterests":[],"shouldAppendProgress":false}`
+companyName 仅在原文明确出现公司全称或签约主体时填写；不得把公司名称写入 requirementDescription。
+contactName、contactPhone、contactDepartment 仅在原文明确出现时填写；不得根据称谓或群名猜测。
+progressSummary 仅在出现已确认需求、报价/预算变化、合同/签约进展、明确会议或交付排期、风险变化、公司主体或关键联系人更新时填写，否则为 null。
+shouldAppendProgress 必须与 progressSummary 是否存在保持一致。
+完整格式：{"signalType":"需求更新","matchedOpportunityId":null,"confidence":0,"summary":"","suggestedStage":null,"requirementDescription":null,"companyName":null,"contactName":null,"contactPhone":null,"contactDepartment":null,"productInterests":[],"progressSummary":null,"shouldAppendProgress":false}`
 
 export function assembleAgentSystemPrompt(input: {
   soulPrompt: string
