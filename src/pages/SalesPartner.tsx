@@ -72,10 +72,10 @@ function cleanAnswerInline(value: string) {
     .trim()
 }
 
-function FormattedAssistantAnswer({ text, loading }: { text: string; loading: boolean }) {
-  if (!text) return <div className="ai-answer-loading">{loading ? '正在分析 CRM 字段与关键进展…' : ''}</div>
+function FormattedAssistantAnswer({ text, loading, status }: { text: string; loading: boolean; status?: string }) {
+  if (!text) return <div className="ai-answer-loading">{loading ? status || '正在分析 CRM 字段与关键进展…' : '本次未收到有效回复，请重新提问。'}</div>
   const lines = text.replace(/```[\s\S]*?```/g, block => block.replace(/```\w*/g, '').replace(/```/g, '')).split('\n')
-  return <div className="ai-answer-content">{lines.map((raw, index) => {
+  return <div className="ai-answer-content">{loading && <div className="ai-answer-stream-status">{status || '正在生成推进建议…'}</div>}{lines.map((raw, index) => {
     const line = raw.trim()
     if (!line || /^\|?\s*:?-{3,}/.test(line)) return null
     const heading = line.match(/^#{1,6}\s+(.+)/)
@@ -109,6 +109,7 @@ export default function SalesPartner() {
   const [agentSignalsLoaded, setAgentSignalsLoaded] = useState(false)
   const [agentConfigured, setAgentConfigured] = useState<boolean | null>(null)
   const [isResponding, setIsResponding] = useState(false)
+  const [thinkingStatus, setThinkingStatus] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合 CRM 商机、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
@@ -393,21 +394,35 @@ export default function SalesPartner() {
     setMessages(items => [...items, { role: 'user', text: displayQuestion || q }, { role: 'assistant', text: '' }])
     setInput('')
     setIsResponding(true)
+    setThinkingStatus('正在读取全部商机和最新信号…')
     const controller = new AbortController()
     chatAbortRef.current = controller
+    let receivedText = false
+    let streamError = ''
     try {
       await agentApi.streamChat({ message: q, sessionId: sessionIdRef.current }, event => {
-        if (event.type === 'session') sessionIdRef.current = event.sessionId
+        if (event.type === 'session') {
+          sessionIdRef.current = event.sessionId
+          setThinkingStatus('正在核对商机阶段、风险和关键进展…')
+        }
         if (event.type === 'delta') {
+          receivedText = receivedText || Boolean(event.content)
+          setThinkingStatus('正在生成判断和下一步建议…')
           setMessages(items => items.map((item, index) => index === items.length - 1 ? { ...item, text: item.text + event.content } : item))
         }
-        if (event.type === 'error') throw new Error(event.message)
+        if (event.type === 'error') streamError = event.message
       }, controller.signal)
+      if (!receivedText) {
+        setMessages(items => items.map((item, index) => index === items.length - 1
+          ? { ...item, text: streamError ? `AI 销售伙伴暂时无法完成分析：${streamError}` : '本次对话流未返回有效内容，请重新提问；系统已记录该异常。' } : item))
+      }
     } catch {
       setMessages(items => items.map((item, index) => index === items.length - 1
         ? { ...item, text: item.text || 'AI 销售伙伴暂时无法响应，请稍后重试。' } : item))
     } finally {
       setIsResponding(false)
+      setThinkingStatus('')
+      chatAbortRef.current = undefined
       window.setTimeout(() => inputRef.current?.focus(), 0)
     }
   }
@@ -485,7 +500,7 @@ export default function SalesPartner() {
               <div className="ai-summary-card"><div className="ai-summary-intro"><p>我已分析当前权限范围内全部商机。当前有 <b>{summary.active}</b> 个活跃商机，<b>{summary.priority}</b> 个需重点推进项。{dashboard && <small>更新于 {new Date(dashboard.analyzedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 缓存 30 分钟</small>}</p></div><div className="ai-snapshot-grid"><button className="ai-snapshot-card progress" onClick={() => openSide('processing')}><span className="ai-snapshot-icon"><Clock3 size={15} /></span><div><small>需审批/处理</small><strong>{summary.processing}</strong></div><em>待办事项</em></button><button className="ai-snapshot-card urgent" onClick={() => openSide('suggestions')}><span className="ai-snapshot-icon"><TriangleAlert size={15} /></span><div><small>需重点推进</small><strong>{summary.priority}</strong></div><em>优先推进</em></button><button className="ai-snapshot-card stable" onClick={() => openSide('stable')}><span className="ai-snapshot-icon"><Check size={15} /></span><div><small>顺利推进中</small><strong>{summary.stable}</strong></div><em>健康度 ≥ 75</em></button><div className="ai-snapshot-card release"><span className="ai-snapshot-icon"><Unlock size={15} /></span><div><small>即将释放</small><strong>{summary.releasingSoon}</strong></div><em>7 天内</em></div></div></div>
               <div className="ai-section-title"><span>今日处理建议</span><b>{suggestions.length}</b></div>
               <div className="ai-suggestion-grid">{suggestions.map((item, index) => <article key={item.id} className={done.includes(item.id) ? 'done' : ''}><div className="ai-suggestion-index">0{index + 1}</div><em>{item.dimension}</em><h3>{item.title}</h3><strong>{item.opp.customerName}</strong><p>{item.reason}</p><button disabled={isResponding} onClick={() => { setDone(v => v.includes(item.id) ? v : [...v, item.id]); void ask(item.query, `${item.action}：${item.opp.customerName}`) }}>{done.includes(item.id) ? <><Check size={14} /> 已分析</> : <>{item.action}<ChevronRight size={14} /></>}</button></article>)}</div>
-              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span>{message.role === 'assistant' ? <FormattedAssistantAnswer text={message.text} loading={isResponding && index === messages.length - 1} /> : <p>{message.text}</p>}</div>)}
+              {messages.map((message, index) => <div key={index} className={`ai-message ${message.role}`}><span>{message.role === 'assistant' ? <img src="/ai-sales-avatar.png" alt="AI 销售伙伴" /> : <b>{currentUser.name.slice(0, 1)}</b>}</span>{message.role === 'assistant' ? <FormattedAssistantAnswer text={message.text} loading={isResponding && index === messages.length - 1} status={thinkingStatus} /> : <p>{message.text}</p>}</div>)}
             </div>
             <div className="ai-input-area"><div className="ai-quick-questions">{['今天优先跟谁？', '哪些商机有风险？', '帮我写跟进话术', '下一步怎么推？'].map(q => <button key={q} disabled={isResponding} onClick={() => void ask(q)}>{q}</button>)}</div><div className={`ai-inputbar ${isResponding ? 'responding' : ''}`}><MessageCircle size={18} /><input ref={inputRef} disabled={isResponding} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && void ask()} placeholder={isResponding ? 'AI 销售伙伴正在分析…' : '你有什么商机进展 / 推进问题，都可以问我…'} /><button disabled={isResponding} onClick={() => void ask()} aria-label="发送"><Send size={17} /></button></div><div className="ai-data-note"><i className={agentConfigured ? 'online' : 'fallback'} />{agentConfigured ? 'DeepSeek Harness 已连接 · ' : '规则模式 · '}Scale X 仅基于你有权访问的 CRM 与连接器数据提供商机分析和推进支持</div></div>
           </div>

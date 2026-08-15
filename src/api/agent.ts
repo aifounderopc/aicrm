@@ -110,18 +110,20 @@ async function streamFrom(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  const processFrame = (frame: string) => {
+    const data = frame.split('\n').find(line => line.startsWith('data: '))?.slice(6)
+    if (!data) return
+    onEvent(JSON.parse(data) as AgentStreamEvent)
+  }
   while (true) {
     const { value, done } = await reader.read()
-    buffer += decoder.decode(value, { stream: !done })
+    buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n')
     const frames = buffer.split('\n\n')
     buffer = frames.pop() ?? ''
-    for (const frame of frames) {
-      const data = frame.split('\n').find(line => line.startsWith('data: '))?.slice(6)
-      if (!data) continue
-      onEvent(JSON.parse(data) as AgentStreamEvent)
-    }
+    for (const frame of frames) processFrame(frame)
     if (done) break
   }
+  if (buffer.trim()) processFrame(buffer)
 }
 
 export const agentApi = {

@@ -446,12 +446,19 @@ export default function OpportunityDetail() {
     setAdvisorResponding(true)
     const controller = new AbortController()
     advisorAbortRef.current = controller
+    let receivedText = false
+    let streamError = ''
     try {
       await agentApi.streamOpportunityChat(opp.id, { message: text, sessionId: advisorSessionRef.current }, event => {
         if (event.type === 'session') advisorSessionRef.current = event.sessionId
-        if (event.type === 'delta') setAdvisorMessages(items => items.map(item => item.id === answerId ? { ...item, text: item.text + event.content } : item))
-        if (event.type === 'error') throw new Error(event.message)
+        if (event.type === 'delta') {
+          receivedText = receivedText || Boolean(event.content)
+          setAdvisorMessages(items => items.map(item => item.id === answerId ? { ...item, text: item.text + event.content } : item))
+        }
+        if (event.type === 'error') streamError = event.message
       }, controller.signal)
+      if (!receivedText) setAdvisorMessages(items => items.map(item => item.id === answerId
+        ? { ...item, text: streamError ? `商机参谋暂时无法完成分析：${streamError}` : '本次对话流未返回有效内容，请重新提问。' } : item))
     } catch {
       setAdvisorMessages(items => items.map(item => item.id === answerId
         ? { ...item, text: item.text || '商机参谋暂时无法响应，请稍后重试。' } : item))

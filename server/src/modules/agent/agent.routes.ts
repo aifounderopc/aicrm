@@ -424,6 +424,45 @@ function streamFallback(res: ExpressResponse, sessionId: string, answer: string)
   res.end()
 }
 
+function abortWhenClientDisconnects(res: ExpressResponse, controller: AbortController) {
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort()
+  })
+}
+
+async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
+  if (!upstream.body) return false
+  const reader = upstream.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let deliveredText = false
+  let completed = false
+  const relayFrame = (frame: string) => {
+    const data = frame.split('\n').find(line => line.startsWith('data: '))?.slice(6)
+    if (!data) return
+    const event = JSON.parse(data) as { type?: string; content?: string }
+    if (event.type === 'error') throw new Error('Agent upstream error')
+    if (event.type === 'delta' && event.content) deliveredText = true
+    if (event.type === 'done') completed = true
+    res.write(`data: ${data}\n\n`)
+  }
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n')
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) relayFrame(frame)
+      if (done) break
+    }
+    if (buffer.trim()) relayFrame(buffer)
+    return deliveredText && completed
+  } catch {
+    await reader.cancel().catch(() => undefined)
+    return false
+  }
+}
+
 agentRouter.get('/opportunities/:id/context', ah(async (req, res) => {
   const auth = req.auth!
   const opportunity = await prisma.opportunity.findFirst({
@@ -546,7 +585,7 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
   ].join('\n\n')
   const sessionId = input.sessionId ?? `opportunity-${opportunity.id}-${createSessionId(auth.user.id)}`
   const controller = new AbortController()
-  req.on('close', () => controller.abort())
+  abortWhenClientDisconnects(res, controller)
 
   let upstream: Response | undefined
   try { upstream = await proxyHarnessStream(prompt, sessionId, controller.signal) } catch { /* 使用规则回退 */ }
@@ -556,17 +595,8 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
   if (upstream?.ok && upstream.body) {
-    const reader = upstream.body.getReader()
-    try {
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        res.write(Buffer.from(value))
-      }
+    if (await relayHarnessStream(upstream, res)) {
       res.end()
-      return
-    } catch {
-      if (!res.writableEnded) res.end()
       return
     }
   }
@@ -626,7 +656,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
   ].join('\n\n')
   const sessionId = input.sessionId ?? createSessionId(auth.user.id)
   const controller = new AbortController()
-  req.on('close', () => controller.abort())
+  abortWhenClientDisconnects(res, controller)
 
   let upstream: Response | undefined
   try {
@@ -640,17 +670,8 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
   res.flushHeaders()
 
   if (upstream?.ok && upstream.body) {
-    const reader = upstream.body.getReader()
-    try {
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        res.write(Buffer.from(value))
-      }
+    if (await relayHarnessStream(upstream, res)) {
       res.end()
-      return
-    } catch {
-      if (!res.writableEnded) res.end()
       return
     }
   }
