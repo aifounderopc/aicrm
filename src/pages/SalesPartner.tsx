@@ -214,6 +214,7 @@ export default function SalesPartner() {
   const [input, setInput] = useState('')
   const [done, setDone] = useState<string[]>([])
   const [dailyOpen, setDailyOpen] = useState(false)
+  const [dailyGeneratedAt, setDailyGeneratedAt] = useState(() => Date.now())
   const [sideOpen, setSideOpen] = useState(false)
   const [sideTab, setSideTab] = useState<SideTab>('processing')
   const [reportAction, setReportAction] = useState<'copied' | 'exported' | null>(null)
@@ -402,13 +403,44 @@ export default function SalesPartner() {
     opportunityId: opp.id, customerName: opp.customerName, stage: stageText(opp.stage), score: scoreFor(opp), reason: '关键字段和近期进展相对完整',
   }))
   const summary = dashboard?.summary ?? { active: active.length, processing: processing.length, priority: suggestions.length, stable: stable.length, releasingSoon: releasingSoon.length }
-  const yesterday = new Date(Date.now() - 86400_000)
-  const yesterdayLabel = yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
-  const stageData = (['reporting', 'signing', 'signed', 'delivery'] as Opportunity['stage'][]).map(stage => ({
-    label: stageText(stage), value: visibleOpps.filter(o => o.stage === stage).length,
+  const dailyNow = new Date(dailyGeneratedAt)
+  const dailyCutoff = dailyGeneratedAt - 86_400_000
+  const dailyDateLabel = dailyNow.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  const dailyTimeLabel = dailyNow.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const recentActivityByOpportunity = new Map<string, number>()
+  const recentSignalIds = new Set<string>()
+  active.forEach(opp => {
+    const activityTimes = [
+      new Date(opp.updatedAt).getTime(),
+      ...opp.progressReports.map(report => new Date(report.createdAt).getTime()),
+      ...(opp.salesSignals ?? []).map(signal => new Date(signal.occurredAt).getTime()),
+    ].filter(time => Number.isFinite(time) && time >= dailyCutoff)
+    if (activityTimes.length) recentActivityByOpportunity.set(opp.id, Math.max(...activityTimes))
+    ;(opp.salesSignals ?? []).forEach(signal => {
+      if (new Date(signal.occurredAt).getTime() >= dailyCutoff) recentSignalIds.add(signal.id)
+    })
+  })
+  agentSignals.forEach(signal => {
+    const time = new Date(signal.time).getTime()
+    if (time < dailyCutoff || !signal.opportunityId || !active.some(opp => opp.id === signal.opportunityId)) return
+    recentSignalIds.add(signal.id)
+    recentActivityByOpportunity.set(signal.opportunityId, Math.max(recentActivityByOpportunity.get(signal.opportunityId) ?? 0, time))
+  })
+  const dailyFocus = active
+    .filter(opp => recentActivityByOpportunity.has(opp.id))
+    .sort((a, b) => (recentActivityByOpportunity.get(b.id) ?? 0) - (recentActivityByOpportunity.get(a.id) ?? 0))
+  const dailyPriority = suggestions[0]?.opp ?? dailyFocus[0] ?? ranked[0]
+  const stageData = [
+    { label: '初接触', stages: ['reporting'] },
+    { label: '需求沟通', stages: ['contacting'] },
+    { label: '方案确认', stages: ['proposal'] },
+    { label: '报价谈判', stages: ['negotiation', 'signing'] },
+  ].map(group => ({
+    label: group.label,
+    value: active.filter(opp => group.stages.includes(opp.stage)).length,
   }))
   const maxStage = Math.max(1, ...stageData.map(item => item.value))
-  const industryData = Object.entries(visibleOpps.reduce<Record<string, number>>((result, opp) => {
+  const industryData = Object.entries(active.reduce<Record<string, number>>((result, opp) => {
     result[opp.industry] = (result[opp.industry] || 0) + 1
     return result
   }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6)
@@ -436,15 +468,16 @@ export default function SalesPartner() {
   }
 
   const dailyReportText = () => [
-    '今日商机日报',
-    `统计周期：昨日（${yesterdayLabel}）`,
-    `活跃商机：${summary.active} 个`,
+    `商机日报 ${dailyDateLabel}`,
+    `统计周期：最近 24 小时 · 当前时间 ${dailyTimeLabel}`,
+    `活跃商机：${active.length} 个`,
     `顺利推进：${summary.stable} 个`,
     `需重点推进：${summary.processing} 个`,
     `已签约/交付：${visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length} 个`,
-    `今日建议：优先跟进「${ranked[0]?.customerName || '暂无'}」`,
+    `最近 24 小时：${dailyFocus.length} 个商机产生更新，沉淀 ${recentSignalIds.size} 条有效信号`,
+    `今日建议：优先跟进「${dailyPriority?.customerName || '暂无'}」`,
     '',
-    ...ranked.slice(0, 4).map((opp, index) => `${index + 1}. ${opp.customerName}｜${stageText(opp.stage)}｜健康度 ${scoreFor(opp)} 分`),
+    ...dailyFocus.slice(0, 4).map((opp, index) => `${index + 1}. ${opp.customerName}｜${stageText(opp.stage)}｜健康度 ${scoreFor(opp)} 分`),
   ].join('\n')
 
   const flashReportAction = (action: 'copied' | 'exported') => {
@@ -492,11 +525,11 @@ export default function SalesPartner() {
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     text('Scale X', 70, 78, 24, '#0c91a8', 800)
-    text('今日商机日报', 70, 145, 48, '#092f3a', 800)
-    text(`统计周期：昨日 · ${yesterdayLabel}`, 70, 190, 22, '#688890', 500)
+    text(`商机日报 ${dailyDateLabel}`, 70, 145, 48, '#092f3a', 800)
+    text(`统计周期：最近 24 小时 · 当前时间 ${dailyTimeLabel}`, 70, 190, 22, '#688890', 500)
     card(70, 230, 1060, 110, '#def5f7')
-    text(`昨日共跟踪 ${active.length} 个活跃商机，${stable.length} 个顺利推进，${processing.length} 个需重点推进。`, 100, 285, 24, '#244e58', 600)
-    text(`今日建议优先跟进「${ranked[0]?.customerName || '暂无'}」。`, 100, 320, 22, '#0c829b', 700)
+    text(`最近 24 小时有 ${dailyFocus.length} 个商机产生更新，沉淀 ${recentSignalIds.size} 条有效信号，${processing.length} 个需重点推进。`, 100, 285, 24, '#244e58', 600)
+    text(`今日建议优先跟进「${dailyPriority?.customerName || '暂无'}」。`, 100, 320, 22, '#0c829b', 700)
     const metrics = [
       ['活跃商机', active.length, '当前 Pipeline'],
       ['顺利推进', stable.length, '健康度 ≥ 75'],
@@ -531,21 +564,21 @@ export default function SalesPartner() {
       text(`${value} 个`, 1055, y, 18, '#315863', 700)
     })
     card(70, 925, 1060, 360)
-    text('昨日重点与今日建议', 100, 975, 26, '#234e59', 750)
-    ranked.slice(0, 4).forEach((opp, index) => {
+    text('近 24 小时重点与推进建议', 100, 975, 26, '#234e59', 750)
+    dailyFocus.slice(0, 4).forEach((opp, index) => {
       const y = 1035 + index * 60
       text(`0${index + 1}`, 100, y, 18, '#9db2b7', 800)
       text(opp.customerName, 155, y, 21, '#234e59', 700)
       text(`${stageText(opp.stage)} · 健康度 ${scoreFor(opp)} 分`, 750, y, 18, '#0c829b', 650)
       ctx.strokeStyle = '#e5eef0'; ctx.beginPath(); ctx.moveTo(100, y + 23); ctx.lineTo(1100, y + 23); ctx.stroke()
     })
-    text('由 Scale X 基于授权 CRM 与连接器数据生成', 70, 1340, 18, '#8ca3a8', 500)
+    text('由 Scale X 基于商机池与已授权连接器实时数据生成', 70, 1340, 18, '#8ca3a8', 500)
     canvas.toBlob(blob => {
       if (!blob) return
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `今日商机日报-${new Date().toISOString().slice(0, 10)}.png`
+      link.download = `商机日报-${dailyDateLabel.replaceAll('/', '-')}.png`
       link.click()
       URL.revokeObjectURL(url)
       flashReportAction('exported')
@@ -674,7 +707,12 @@ export default function SalesPartner() {
 
       <section className="ai-conversation glass-panel">
         <header className="ai-conversation-head">
-          <button className="ai-head-action" onClick={() => setDailyOpen(true)}><CalendarDays size={15} /><strong>商机日报</strong></button>
+          <button className="ai-head-action" onClick={() => {
+            setDailyGeneratedAt(Date.now())
+            setDailyOpen(true)
+            void bootstrap()
+            void agentApi.dashboard().then(setDashboard).catch(() => undefined)
+          }}><CalendarDays size={15} /><strong>商机日报</strong></button>
           {!sideOpen && <button className="ai-side-toggle" onClick={() => setSideOpen(true)} aria-label="展开销售伙伴侧边栏" title="侧边栏"><PanelRight size={17} /></button>}
         </header>
         <div className="ai-conversation-main">
@@ -692,7 +730,7 @@ export default function SalesPartner() {
         {sideOpen && <aside className="ai-detail-side"><div className="ai-side-head"><strong>商机跟进</strong><button onClick={() => setSideOpen(false)} aria-label="关闭侧边栏"><X size={15} /></button></div><div className="ai-side-tabs"><button className={sideTab === 'processing' ? 'active' : ''} onClick={() => setSideTab('processing')}><span>需审批/处理</span><b>{processing.length}</b></button><button className={sideTab === 'stable' ? 'active' : ''} onClick={() => setSideTab('stable')}><span>顺利推进中</span><b>{stable.length}</b></button><button className={sideTab === 'suggestions' ? 'active' : ''} onClick={() => setSideTab('suggestions')}><span>今日处理建议</span><b>{suggestions.length}</b></button></div><div className="ai-side-list">{renderSideList()}</div></aside>}
       </section>
 
-      {dailyOpen && <div className="ai-modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setDailyOpen(false)}><section className="ai-daily-modal"><header><div className="ai-daily-heading"><span><BarChart3 size={20} /> 今日商机日报</span><p>统计周期：昨日 · {yesterdayLabel}</p></div><div className="ai-daily-header-actions"><button onClick={copyDailyReport}><Copy size={15} />{reportAction === 'copied' ? '已复制' : '一键复制'}</button><button onClick={exportDailyReport}><Download size={15} />{reportAction === 'exported' ? '已导出' : '导出图片'}</button><button className="close" onClick={() => setDailyOpen(false)} aria-label="关闭日报"><X size={18} /></button></div></header><div className="ai-daily-body"><div className="ai-daily-summary"><Sparkles size={20} /><p>昨日共跟踪 <b>{active.length}</b> 个活跃商机，{stable.length} 个顺利推进，{processing.length} 个需重点推进。建议今日优先跟进「{ranked[0]?.customerName || '暂无'}」。</p></div><div className="ai-daily-metrics"><div><span>活跃商机</span><strong>{active.length}</strong><small>当前 Pipeline</small></div><div><span>顺利推进</span><strong>{stable.length}</strong><small>健康度 ≥ 75</small></div><div><span>需重点推进</span><strong>{processing.length}</strong><small>到期或高风险</small></div><div><span>已签约/交付</span><strong>{visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length}</strong><small>持续锁定</small></div></div><div className="ai-daily-charts"><section><h3>商机阶段分布</h3><div className="ai-bar-chart">{stageData.map((item, index) => <div key={item.label}><span>{item.label}</span><i><b style={{ width: `${Math.max(8, item.value / maxStage * 100)}%`, background: ['#36a8bd', '#f0aa3c', '#28a879', '#7867ce'][index] }} /></i><strong>{item.value}</strong></div>)}</div></section><section><h3>Top 行业分布</h3><div className="ai-industry-list">{industryData.map(([name, value], index) => <div key={name}><i style={{ background: ['#12a4b7', '#6e7fd1', '#e8a23c', '#38a77a', '#d16f87', '#8a72c9'][index] }} /><span>{name}</span><strong>{value} 个</strong></div>)}</div></section></div><div className="ai-daily-focus"><h3>昨日重点与今日建议</h3>{ranked.slice(0, 4).map((opp, index) => <button key={opp.id} onClick={() => { setDailyOpen(false); navigate(`/opportunity/${opp.id}`) }}><b>0{index + 1}</b><div><strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · {opp.requirementDescription.slice(0, 42)}…</p></div><span>健康度 {scoreFor(opp)}</span><ChevronRight size={16} /></button>)}</div></div></section></div>}
+      {dailyOpen && <div className="ai-modal-backdrop" onMouseDown={e => e.target === e.currentTarget && setDailyOpen(false)}><section className="ai-daily-modal"><header><div className="ai-daily-heading"><span><BarChart3 size={20} /> 商机日报 {dailyDateLabel}</span><p>统计周期：最近 24 小时 · 当前时间 {dailyTimeLabel}</p></div><div className="ai-daily-header-actions"><button onClick={copyDailyReport}><Copy size={15} />{reportAction === 'copied' ? '已复制' : '一键复制'}</button><button onClick={exportDailyReport}><Download size={15} />{reportAction === 'exported' ? '已导出' : '导出图片'}</button><button className="close" onClick={() => setDailyOpen(false)} aria-label="关闭日报"><X size={18} /></button></div></header><div className="ai-daily-body"><div className="ai-daily-summary"><Sparkles size={20} /><p>最近 24 小时共有 <b>{dailyFocus.length}</b> 个商机产生更新，沉淀 {recentSignalIds.size} 条有效信号，{processing.length} 个需重点推进。建议优先跟进「{dailyPriority?.customerName || '暂无'}」。</p></div><div className="ai-daily-metrics"><div><span>活跃商机</span><strong>{active.length}</strong><small>当前 Pipeline</small></div><div><span>顺利推进</span><strong>{stable.length}</strong><small>健康度 ≥ 75</small></div><div><span>需重点推进</span><strong>{processing.length}</strong><small>到期或高风险</small></div><div><span>已签约/交付</span><strong>{visibleOpps.filter(o => ['signed', 'delivery'].includes(o.stage)).length}</strong><small>持续锁定</small></div></div><div className="ai-daily-charts"><section><h3>商机阶段分布</h3><div className="ai-bar-chart">{stageData.map((item, index) => <div key={item.label}><span>{item.label}</span><i><b style={{ width: `${Math.max(8, item.value / maxStage * 100)}%`, background: ['#36a8bd', '#f0aa3c', '#28a879', '#7867ce'][index] }} /></i><strong>{item.value}</strong></div>)}</div></section><section><h3>Top 行业分布</h3><div className="ai-industry-list">{industryData.map(([name, value], index) => <div key={name}><i style={{ background: ['#12a4b7', '#6e7fd1', '#e8a23c', '#38a77a', '#d16f87', '#8a72c9'][index] }} /><span>{name}</span><strong>{value} 个</strong></div>)}</div></section></div><div className="ai-daily-focus"><h3>近 24 小时重点与推进建议</h3>{dailyFocus.slice(0, 4).map((opp, index) => <button key={opp.id} onClick={() => { setDailyOpen(false); navigate(`/opportunity/${opp.id}`) }}><b>0{index + 1}</b><div><strong>{opp.customerName}</strong><p>{stageText(opp.stage)} · {opp.requirementDescription.slice(0, 42)}…</p></div><span>健康度 {scoreFor(opp)}</span><ChevronRight size={16} /></button>)}</div></div></section></div>}
     </div>
   )
 }
