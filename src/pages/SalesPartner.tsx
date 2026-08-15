@@ -64,6 +64,13 @@ function feishuSignalType(content: string) {
   return '需求更新'
 }
 
+function signalTagTone(signal: SalesSignal) {
+  const content = `${signal.tag} ${signal.title} ${signal.summary}`
+  if (/风险预警|高风险|阻塞|延期|流失|异常|拒绝|投诉/.test(content)) return 'risk'
+  if (/签约|合同已签|完成盖章|成交|赢单|回款|交付完成/.test(content)) return 'success'
+  return 'normal'
+}
+
 function cleanAnswerInline(value: string) {
   return value
     .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
@@ -592,7 +599,7 @@ export default function SalesPartner() {
         <div className="ai-panel-title"><span className="ai-kicker"><Sparkles size={14} /> 商机实时信号</span><b>{visibleSignals.length} 条</b></div>
         <div className="ai-filter-row">{(['all', 'jingme', 'feishu', 'email', 'meeting'] as SignalChannel[]).map(id => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{id === 'all' ? '全部' : channelMeta[id].label}</button>)}</div>
         <div className="ai-signal-list">
-          {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; return <button key={item.id} className={`ai-signal-item ${item.opportunityId ? '' : 'source-only'}`} onClick={() => item.opportunityId && navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span>{item.tag}</span>{item.sourceCount && item.sourceCount > 1 ? <small>汇总 {item.sourceCount} 条</small> : null}</div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">暂无与商机推进相关的新信号</div>}
+          {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; const tagTone = signalTagTone(item); return <button key={item.id} className={`ai-signal-item ${item.opportunityId ? '' : 'source-only'}`} onClick={() => item.opportunityId && navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span className={tagTone}>{item.tag}</span>{item.sourceCount && item.sourceCount > 1 ? <small>汇总 {item.sourceCount} 条</small> : null}</div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">暂无与商机推进相关的新信号</div>}
         </div>
       </aside>
 
