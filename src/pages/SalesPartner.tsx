@@ -173,11 +173,12 @@ export default function SalesPartner() {
         summary: signal.summary,
       }))
     : rawFeishuSignals
-  const signals: SalesSignal[] = [
-    ...opportunitySignals.slice(0, featuredSignals.length),
-    ...liveFeishuSignals,
-    ...opportunitySignals.slice(featuredSignals.length),
-  ].slice(0, 50)
+  const liveOpportunityIds = new Set(liveFeishuSignals.map(signal => signal.opportunityId).filter(Boolean))
+  const fallbackSignals = opportunitySignals.filter(signal => !signal.opportunityId || !liveOpportunityIds.has(signal.opportunityId))
+  const signals: SalesSignal[] = (liveFeishuSignals.length
+    ? [...liveFeishuSignals, ...fallbackSignals]
+    : opportunitySignals
+  ).slice(0, 50)
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
 
   const suggestions = [

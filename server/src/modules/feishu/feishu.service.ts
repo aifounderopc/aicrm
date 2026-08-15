@@ -3,6 +3,7 @@ import { prisma } from '../../db.js'
 import { decryptField } from '../../util/crypto.js'
 import { handleFeishuMessage } from './feishu.handler.js'
 import { startFeishuMessageReceiver, type FeishuCredentials } from './feishu.receiver.js'
+import { startFeishuHistorySync } from './feishu.sync.js'
 
 export async function loadFeishuCredentials(): Promise<FeishuCredentials | undefined> {
   const stored = await prisma.integrationConnection.findUnique({ where: { provider: 'feishu' } })
@@ -18,5 +19,6 @@ export async function activateFeishuReceiver(credentials?: FeishuCredentials): P
   const resolved = credentials ?? await loadFeishuCredentials()
   if (!resolved) return false
   await startFeishuMessageReceiver(resolved, handleFeishuMessage)
+  startFeishuHistorySync(resolved)
   return true
 }

@@ -4,7 +4,7 @@ import { processFeishuMessageSignal } from '../agent/agent.service.js'
 
 export async function handleFeishuMessage(
   message: FeishuInboundMessage,
-  _event: FeishuMessageEvent,
+  _event?: FeishuMessageEvent,
 ): Promise<void> {
   const saved = await prisma.feishuMessage.upsert({
     where: { id: message.id },

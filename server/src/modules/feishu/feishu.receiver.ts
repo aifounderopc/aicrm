@@ -40,7 +40,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 240) : '飞书长连接异常'
 }
 
-function readableContent(raw: string, messageType: string): string {
+export function readableContent(raw: string, messageType: string): string {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>
     if (typeof parsed.text === 'string') return parsed.text
