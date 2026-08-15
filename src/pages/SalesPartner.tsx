@@ -4,7 +4,7 @@ import { BarChart3, CalendarDays, Check, ChevronRight, CircleCheckBig, Clock3, C
 import { useStore } from '../store'
 import { amountLabel, daysUntil } from '../utils'
 import type { Opportunity } from '../types'
-import { agentApi, integrationApi, type AgentDashboard, type AgentSignal as ApiAgentSignal, type FeishuMessage } from '../api'
+import { agentApi, integrationApi, opportunityApi, type AgentDashboard, type AgentSignal as ApiAgentSignal, type FeishuMessage } from '../api'
 
 type ChatMessage = { role: 'assistant' | 'user'; text: string }
 type AiHandoff = {
@@ -218,7 +218,7 @@ export default function SalesPartner() {
   const [thinkingSeconds, setThinkingSeconds] = useState(0)
   const [thinkingSteps, setThinkingSteps] = useState<string[]>([])
   const [thinkingStep, setThinkingStep] = useState(0)
-  const [deferredProcessing, setDeferredProcessing] = useState<string[]>([])
+  const [processingState, setProcessingState] = useState<Record<string, 'confirming' | 'confirmed' | 'later' | 'error'>>({})
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合商机进度、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
@@ -380,6 +380,23 @@ export default function SalesPartner() {
     result[opp.industry] = (result[opp.industry] || 0) + 1
     return result
   }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6)
+
+  const confirmProcessingJudgment = async (item: typeof processing[number]) => {
+    setProcessingState(states => ({ ...states, [item.opportunityId]: 'confirming' }))
+    try {
+      await opportunityApi.addProgress(item.opportunityId, {
+        status: 'normal',
+        lastContactDate: new Date().toISOString(),
+        description: `【AI 销售伙伴判断确认】已确认待处理事项：${item.reason}。当前阶段：${item.stage}，健康度 ${item.score} 分。`,
+        estimatedSignDate: '',
+        needsSupport: false,
+      })
+      await bootstrap()
+      setProcessingState(states => ({ ...states, [item.opportunityId]: 'confirmed' }))
+    } catch {
+      setProcessingState(states => ({ ...states, [item.opportunityId]: 'error' }))
+    }
+  }
 
   const openSide = (tab: SideTab) => {
     setSideTab(tab)
@@ -582,24 +599,26 @@ export default function SalesPartner() {
         <strong>{item.opp.customerName}</strong><p>{item.reason} · {item.action}</p>
       </button>
     ))
-    if (sideTab === 'processing') return [...processing].sort((a, b) => Number(deferredProcessing.includes(a.opportunityId)) - Number(deferredProcessing.includes(b.opportunityId))).map(item => {
+    if (sideTab === 'processing') return [...processing].sort((a, b) => Number(processingState[a.opportunityId] === 'later') - Number(processingState[b.opportunityId] === 'later')).map(item => {
       const isApproval = /保护期/.test(item.reason)
       const taskTitle = isApproval ? '保护期推进判断' : '关键事项待处理'
       const opportunity = active.find(opp => opp.id === item.opportunityId)
       const latestProgress = opportunity?.progressReports[0]?.description
-      const deferred = deferredProcessing.includes(item.opportunityId)
+      const state = processingState[item.opportunityId]
       return (
-        <article key={item.opportunityId} className={`ai-side-item processing ${isApproval ? 'approval' : 'handling'} ${deferred ? 'deferred' : ''}`}>
+        <article key={item.opportunityId} className={`ai-side-item processing ${isApproval ? 'approval' : 'handling'} ${state === 'later' ? 'deferred' : ''} ${state === 'confirmed' ? 'confirmed' : ''}`}>
           <button className="ai-side-card-link" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}>
-            <span className="ai-approval-card-head"><strong>{item.customerName}</strong><span><i className={isApproval ? 'approval' : 'handling'}>{isApproval ? '需判断' : '需处理'}</i><em>{item.stage}</em></span></span>
+            <span className="ai-approval-card-head"><strong>{item.customerName}</strong><span>{isApproval && <i className="approval">需判断</i>}<em>{item.stage}</em></span></span>
             <span className="ai-approval-subject"><b>{taskTitle}</b></span>
             <span className="ai-processing-meta"><span><small>金额区间</small><b>{opportunity ? amountLabel(opportunity.amountRange) : '待补充'}</b></span><span><small>销售负责人</small><b>{opportunity?.salesOwnerName || '待明确'}</b></span></span>
             <span className="ai-processing-detail"><small>待处理</small><p>{item.reason}</p></span>
             {latestProgress && <span className="ai-processing-detail latest"><small>最新进展</small><p>{latestProgress}</p></span>}
           </button>
           <div className="ai-approval-actions">
-            <button className="later" disabled={deferred} onClick={() => setDeferredProcessing(items => items.includes(item.opportunityId) ? items : [...items, item.opportunityId])}>{deferred ? '已确认' : '确认、稍后'}</button>
-            <button className="handle" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}>去处理<ChevronRight size={12} /></button>
+            {isApproval ? state === 'confirmed'
+              ? <span className="confirmed">已写入商机</span>
+              : <><button className="confirm" disabled={state === 'confirming'} onClick={() => void confirmProcessingJudgment(item)}>{state === 'confirming' ? '写入中…' : state === 'error' ? '重新确认' : '确认'}</button><button className="later" onClick={() => setProcessingState(states => ({ ...states, [item.opportunityId]: 'later' }))}>稍后</button></>
+              : <button className="handle" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}>去处理<ChevronRight size={12} /></button>}
           </div>
         </article>
       )

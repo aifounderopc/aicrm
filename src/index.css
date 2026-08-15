@@ -513,6 +513,7 @@ body.ai-partner-open { overflow: hidden; }
 .ai-processing-detail.latest { padding-top:7px; border-top:1px solid rgba(91,121,145,.1); }
 .ai-approval-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 10px; }
 .ai-approval-actions button { min-width: 48px; padding: 5px 10px; border-radius: 8px; font-size: 10px; font-weight: 750; cursor: pointer; }
+.ai-approval-actions button:disabled { opacity:.62; cursor:wait; }
 .ai-approval-actions .confirm { color: white; border: 1px solid #1657c8; background: #1657c8; box-shadow: 0 3px 8px rgba(22,87,200,.16); }
 .ai-approval-actions .reject { color: #c2413c; border: 1px solid rgba(194,65,60,.25); background: #fff8f7; }
 .ai-approval-actions .handle { display: inline-flex; align-items: center; gap: 2px; color: white; border: 1px solid #b96d08; background: #c9780d; box-shadow: 0 3px 8px rgba(185,109,8,.13); }
