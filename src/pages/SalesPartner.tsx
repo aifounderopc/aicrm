@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, MessageCircle, PanelRight, Send, Sparkles, TriangleAlert, Unlock, X } from 'lucide-react'
+import { BarChart3, CalendarDays, Check, ChevronRight, CircleCheckBig, Clock3, Copy, Download, FileSearch, ListChecks, MessageCircle, PanelRight, Quote, Send, Sparkles, Target, TriangleAlert, Unlock, X } from 'lucide-react'
 import { useStore } from '../store'
 import { daysUntil } from '../utils'
 import type { Opportunity } from '../types'
@@ -105,7 +105,12 @@ function AnalysisProgress({ phase, status, seconds }: { phase: ThinkingPhase; st
 }
 
 function AnalysisComplete({ seconds }: { seconds: number }) {
-  return <div className="ai-analysis-complete"><Sparkles size={12} /><span>分析过程</span><p>已理解问题 · 已核对商机上下文与关键证据 · 已生成针对性回答</p><small>{Math.max(seconds, 1)} 秒</small></div>
+  return <div className="ai-analysis-complete"><Sparkles size={12} /><span>已结合最新 CRM 与商机信号分析</span><small>{Math.max(seconds, 1)} 秒</small></div>
+}
+
+function AnswerSectionIcon({ kind }: { kind: 'risk' | 'speech' | 'evidence' | 'action' | 'conclusion' }) {
+  const Icon = kind === 'risk' ? TriangleAlert : kind === 'speech' ? Quote : kind === 'evidence' ? FileSearch : kind === 'action' ? ListChecks : Target
+  return <Icon size={14} />
 }
 
 function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showProcess }: { text: string; loading: boolean; status?: string; phase: ThinkingPhase; seconds: number; showProcess: boolean }) {
@@ -122,7 +127,14 @@ function FormattedAssistantAnswer({ text, loading, status, phase, seconds, showP
     if (labeled) {
       const kind = /风险|提醒|注意/.test(labeled[1]) ? 'risk' : /话术|回应|沟通/.test(labeled[1]) ? 'speech' : /依据|进展|为什么|确认/.test(labeled[1]) ? 'evidence' : /方案|行动|下一步|建议|成功/.test(labeled[1]) ? 'action' : 'conclusion'
       const paragraphs = labeled[2].match(/[^。！？；]+[。！？；]?/g)?.map(item => item.trim()).filter(Boolean) ?? []
-      return <section className={`ai-answer-section ${kind}`} key={index}><strong>{labeled[1]}</strong>{paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex}>{renderAnswerInline(paragraph)}</p>)}</section>
+      return <section className={`ai-answer-section ${kind}`} key={index}>
+        <header><span><AnswerSectionIcon kind={kind} /></span><strong>{labeled[1]}</strong></header>
+        {kind === 'action'
+          ? <div className="ai-answer-action-grid">{paragraphs.map((paragraph, paragraphIndex) => <article key={paragraphIndex}><i>{paragraphIndex + 1}</i><p>{renderAnswerInline(paragraph)}</p></article>)}</div>
+          : kind === 'speech'
+            ? <blockquote>{paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex}>{renderAnswerInline(paragraph)}</p>)}</blockquote>
+            : <div className="ai-answer-section-copy">{paragraphs.map((paragraph, paragraphIndex) => <p key={paragraphIndex}>{kind === 'conclusion' && paragraphIndex === 0 && <CircleCheckBig size={14} />}{renderAnswerInline(paragraph)}</p>)}</div>}
+      </section>
     }
     const bullet = line.match(/^(?:[-*•]|\d+[.)、])\s*(.+)$/)
     if (bullet) return <div className="ai-answer-bullet" key={index}><i /> <span>{renderAnswerInline(bullet[1])}</span></div>
