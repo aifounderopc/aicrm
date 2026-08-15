@@ -16,7 +16,7 @@ async function main() {
     { id: 'admin1', name: '张管理', role: 'admin', email: 'admin@joymarketing.com', passwordEnv: 'SEED_ADMIN_PASSWORD' },
     { id: 'cadmin1', name: '李渠道', role: 'channel_admin', email: 'channeladmin@joymarketing.com', passwordEnv: 'SEED_CHANNEL_ADMIN_PASSWORD' },
     { id: 'sadmin1', name: '王直客', role: 'sales_admin', email: 'salesadmin@joymarketing.com', passwordEnv: 'SEED_SALES_ADMIN_PASSWORD' },
-    { id: 'u_yd', name: '严頔', role: 'sales', email: 'yandi@joymarketing.com', passwordEnv: 'SEED_SALES_PASSWORD' },
+    { id: 'u_yd', name: '李天琦', role: 'sales', email: 'tianqi@joymarketing.com', passwordEnv: 'SEED_SALES_PASSWORD' },
   ] as const
 
   for (const u of users) {
