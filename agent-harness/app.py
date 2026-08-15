@@ -81,6 +81,8 @@ def sse(payload: dict[str, Any]) -> str:
 
 @app.post("/stream")
 def stream_agent(body: RunInput) -> StreamingResponse:
+    if not HAS_API_KEY:
+        raise HTTPException(status_code=503, detail="DEEPSEEK_API_KEY is not configured")
     events: queue.Queue[dict[str, Any] | None] = queue.Queue()
 
     def worker() -> None:
