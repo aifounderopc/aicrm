@@ -52,6 +52,16 @@ export type AgentStreamEvent =
   | { type: 'done'; sessionId: string; fallback?: boolean }
   | { type: 'error'; message: string }
 
+export type OpportunityAdvisorContext = {
+  opportunityId: string
+  fields: number
+  progress: number
+  signals: number
+  evidence: number
+  latestProgressAt: string | null
+  latestSignalAt: string | null
+}
+
 async function streamFrom(
   path: string,
   input: { message: string; sessionId?: string },
@@ -95,6 +105,7 @@ export const agentApi = {
     if (!response.ok) throw new ApiError('无法读取商机信号', response.status)
     return response.json() as Promise<AgentSignal[]>
   },
+  opportunityContext: (opportunityId: string) => api.get<OpportunityAdvisorContext>(`/agent/opportunities/${encodeURIComponent(opportunityId)}/context`),
   streamChat: (input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>
     streamFrom('/agent/chat/stream', input, onEvent, signal),
   streamOpportunityChat: (opportunityId: string, input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>

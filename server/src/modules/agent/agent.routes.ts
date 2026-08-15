@@ -168,6 +168,34 @@ function streamFallback(res: ExpressResponse, sessionId: string, answer: string)
   res.end()
 }
 
+agentRouter.get('/opportunities/:id/context', ah(async (req, res) => {
+  const auth = req.auth!
+  const opportunity = await prisma.opportunity.findFirst({
+    where: { id: req.params.id, ...opportunityWhere(auth) },
+    select: {
+      id: true, customerName: true, companyName: true, industry: true, productInterests: true,
+      stage: true, amountRange: true, requirementDescription: true, contractNo: true,
+      signedDate: true, signedAmount: true, contact: { select: { level: true, department: true, encName: true } },
+      _count: { select: { progressReports: true, salesSignals: true, evidenceFiles: true } },
+      progressReports: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+      salesSignals: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+    },
+  })
+  if (!opportunity) throw new ApiError(404, '商机不存在或无权访问')
+  const fields = [
+    opportunity.customerName, opportunity.companyName, opportunity.industry, opportunity.productInterests.length,
+    opportunity.stage, opportunity.amountRange, opportunity.requirementDescription, opportunity.contact?.level,
+    opportunity.contact?.department, opportunity.contact?.encName, opportunity.contractNo,
+    opportunity.signedDate, opportunity.signedAmount,
+  ].filter(Boolean).length
+  res.json({
+    opportunityId: opportunity.id, fields, progress: opportunity._count.progressReports,
+    signals: opportunity._count.salesSignals, evidence: opportunity._count.evidenceFiles,
+    latestProgressAt: opportunity.progressReports[0]?.createdAt ?? null,
+    latestSignalAt: opportunity.salesSignals[0]?.createdAt ?? null,
+  })
+}))
+
 agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
   const auth = req.auth!
   const input = chatSchema.parse(req.body)

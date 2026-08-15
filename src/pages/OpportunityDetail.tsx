@@ -5,7 +5,7 @@ import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAd
 import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Plus, Trash2, Eye, CircleHelp, Bot, Copy, Check, LoaderCircle } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
-import { opportunityApi, agentApi, ApiError } from '../api'
+import { opportunityApi, agentApi, ApiError, type OpportunityAdvisorContext } from '../api'
 
 const stageConfig: Record<string, { bg: string; text: string; bar: string }> = {
   reporting: { bg: '#f3f4f6', text: '#374151', bar: '#9ca3af' },
@@ -96,6 +96,9 @@ export default function OpportunityDetail() {
   const [advisorInput, setAdvisorInput] = useState('')
   const [advisorResponding, setAdvisorResponding] = useState(false)
   const [advisorCopiedId, setAdvisorCopiedId] = useState<string | null>(null)
+  const [advisorContext, setAdvisorContext] = useState<OpportunityAdvisorContext | null>(null)
+  const [advisorPendingSaveId, setAdvisorPendingSaveId] = useState<string | null>(null)
+  const [advisorSavedIds, setAdvisorSavedIds] = useState<Set<string>>(() => new Set())
   const advisorSessionRef = useRef<string | undefined>(undefined)
   const advisorAbortRef = useRef<AbortController | null>(null)
   const advisorScrollRef = useRef<HTMLDivElement>(null)
@@ -128,6 +131,10 @@ export default function OpportunityDetail() {
     setAdvisorMessages([])
     setAdvisorInput('')
     setAdvisorResponding(false)
+    setAdvisorContext(null)
+    setAdvisorPendingSaveId(null)
+    setAdvisorSavedIds(new Set())
+    if (contactOpportunityId) void agentApi.opportunityContext(contactOpportunityId).then(setAdvisorContext).catch(() => {})
   }, [contactOpportunityId])
 
   useEffect(() => {
@@ -355,6 +362,18 @@ export default function OpportunityDetail() {
     window.setTimeout(() => setAdvisorCopiedId(current => current === message.id ? null : current), 1500)
   }
 
+  const saveAdvisorSuggestion = (message: AdvisorMessage) => {
+    addProgressReport({
+      opportunityId: opp.id, reporterId: currentUser.id, status: 'normal',
+      lastContactDate: new Date().toISOString(),
+      description: `【商机参谋建议 · 人工确认】${message.text.slice(0, 1200)}`,
+      estimatedSignDate: '', needsSupport: false,
+    })
+    setAdvisorSavedIds(items => new Set(items).add(message.id))
+    setAdvisorPendingSaveId(null)
+    setAdvisorContext(current => current ? { ...current, progress: current.progress + 1, latestProgressAt: new Date().toISOString() } : current)
+  }
+
   return (
     <div>
 
@@ -484,14 +503,16 @@ export default function OpportunityDetail() {
               <div><span>商机健康度</span><strong>{healthScore} 分</strong></div>
               <div className={!opp.lockedPermanently && days <= 7 ? 'warning' : ''}><span>首要关注</span><strong>{!opp.lockedPermanently && days <= 7 ? `保护期剩 ${Math.max(days, 0)} 天` : progressReports.length ? '跟进最新客户反馈' : '补齐推进记录'}</strong></div>
             </div>
+            <div className="sx-advisor-context"><Bot size={12} /><span>已读取</span><b>{advisorContext?.fields ?? '—'} 个字段</b><b>{advisorContext?.progress ?? progressReports.length} 条推进</b><b>{advisorContext?.signals ?? '—'} 条飞书信号</b><b>{advisorContext?.evidence ?? evidenceFiles.length} 份资料</b></div>
             <div className="sx-advisor-quick">
-              {['分析当前商机', '下一步怎么推进', '总结最新飞书信号', '检查字段缺失', '生成客户沟通话术'].map(item => <button key={item} onClick={() => askAdvisor(item)} disabled={advisorResponding}>{item}</button>)}
+              {['生成实时作战简报', '下一步怎么推进', '总结最新飞书信号', '检查字段缺失', '生成客户沟通话术'].map(item => <button key={item} onClick={() => askAdvisor(item)} disabled={advisorResponding}>{item}</button>)}
             </div>
             <div className={`sx-advisor-chat ${advisorMessages.length ? 'active' : ''}`} ref={advisorScrollRef}>
               {!advisorMessages.length && <div className="sx-advisor-empty"><span><Bot size={17} /></span><div><strong>已接入该商机完整上下文</strong><p>可分析 CRM 字段、推进记录、飞书信号、合同、保护状态和资料缺口。选择上方问题或直接提问。</p></div></div>}
               {advisorMessages.map(message => <div key={message.id} className={`sx-advisor-message ${message.role}`}>
                 {message.role === 'assistant' && <span className="avatar"><Sparkles size={13} /></span>}
-                <div><p>{message.text || '正在结合商机上下文分析…'}</p>{message.role === 'assistant' && message.text && <button onClick={() => copyAdvisorMessage(message)} title="复制回答">{advisorCopiedId === message.id ? <Check size={12} /> : <Copy size={12} />}</button>}</div>
+                <div><p>{message.text || '正在结合商机上下文分析…'}</p>{message.role === 'assistant' && message.text && <div className="sx-advisor-answer-actions"><button onClick={() => copyAdvisorMessage(message)} title="复制回答">{advisorCopiedId === message.id ? <Check size={12} /> : <Copy size={12} />}<span>{advisorCopiedId === message.id ? '已复制' : '复制'}</span></button>{canEdit && <button className={advisorSavedIds.has(message.id) ? 'saved' : ''} onClick={() => !advisorSavedIds.has(message.id) && setAdvisorPendingSaveId(message.id)} disabled={advisorSavedIds.has(message.id)}><FileText size={12} /><span>{advisorSavedIds.has(message.id) ? '已沉淀' : '沉淀为推进建议'}</span></button>}</div>}
+                {advisorPendingSaveId === message.id && <div className="sx-advisor-save-confirm"><span>确认将本条建议写入“商机推进”？</span><button onClick={() => setAdvisorPendingSaveId(null)}>取消</button><button className="primary" onClick={() => saveAdvisorSuggestion(message)}>确认沉淀</button></div>}</div>
               </div>)}
               {advisorResponding && advisorMessages.at(-1)?.text && <div className="sx-advisor-thinking"><LoaderCircle size={12} className="spin" />持续分析中</div>}
             </div>
