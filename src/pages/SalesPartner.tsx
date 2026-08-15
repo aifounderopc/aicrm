@@ -123,18 +123,14 @@ function renderAnswerInline(value: string) {
   })
 }
 
-function AnalysisProgress({ phase, status, seconds }: { phase: ThinkingPhase; status: string; seconds: number }) {
-  const steps: Array<{ id: ThinkingPhase; label: string }> = [
-    { id: 'reading', label: '理解问题' }, { id: 'reasoning', label: '核对上下文' }, { id: 'writing', label: '生成方案' },
-  ]
-  const current = steps.findIndex(item => item.id === phase)
-  return <div className="ai-analysis-progress"><div>{steps.map((step, index) => <span key={step.id} className={index < current ? 'done' : index === current ? 'active' : ''}><i>{index < current ? '✓' : index + 1}</i>{step.label}</span>)}</div><small>{status} · {seconds} 秒</small></div>
+function AnalysisProgress({ status, seconds }: { phase: ThinkingPhase; status: string; seconds: number }) {
+  return <div className="ai-analysis-progress"><i /><div><strong>正在处理当前任务</strong><p>{status}</p></div><small>{seconds} 秒</small></div>
 }
 
 function AnalysisComplete({ seconds, evidence }: { seconds: number; evidence: string[] }) {
   return <details className="ai-analysis-complete">
-    <summary><Sparkles size={12} /><span>分析过程</span><p>已核对最新 CRM、推进记录与商机信号</p><small>{Math.max(seconds, 1)} 秒</small><ChevronRight size={13} /></summary>
-    <div><p>以下为支撑本次判断的业务依据，不包含模型内部推理：</p>{evidence.length > 0 && <ul>{evidence.map((item, index) => <li key={index}>{renderAnswerInline(item)}</li>)}</ul>}</div>
+    <summary><Sparkles size={12} /><span>本次分析依据</span><p>点击查看已核对的业务信息</p><small>{Math.max(seconds, 1)} 秒</small><ChevronRight size={13} /></summary>
+    <div><p>以下是支撑本次判断的业务事实，不包含模型内部推理：</p>{evidence.length > 0 && <ul>{evidence.map((item, index) => <li key={index}>{renderAnswerInline(item)}</li>)}</ul>}</div>
   </details>
 }
 
@@ -488,7 +484,7 @@ export default function SalesPartner() {
       await agentApi.streamChat({ message: q, sessionId: sessionIdRef.current }, event => {
         if (event.type === 'session') {
           sessionIdRef.current = event.sessionId
-          setThinkingStatus('正在核对商机阶段、风险和关键进展…')
+          setThinkingStatus('正在为本次问题规划分析路径…')
           setThinkingPhase('reasoning')
         }
         if (event.type === 'progress') {

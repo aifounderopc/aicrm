@@ -215,6 +215,22 @@ function understandSalesQuery(message: string, opportunities: Array<{ id: string
   }
 }
 
+function salesProgressPlan(intent: SalesQueryIntent, focused: boolean) {
+  const plans: Record<SalesQueryIntent, { analyze: string; compose: string }> = {
+    prioritize: { analyze: '正在比较商机阶段、近期变化、风险与保护期…', compose: '正在形成差异化优先顺序和今日动作…' },
+    risk: { analyze: '正在核对风险信号、影响范围与尚未确认事项…', compose: '正在整理风险优先级和可执行缓解方案…' },
+    next_step: { analyze: '正在梳理当前阶段、阻塞点与动作依赖…', compose: '正在编排推进顺序、负责人和完成标志…' },
+    message: { analyze: '正在确认沟通对象、目标与表达边界…', compose: '正在生成适配当前客户阶段的沟通内容…' },
+    meeting: { analyze: '正在核对会议目标、参与角色与待决问题…', compose: '正在组织议程、提问重点和会后产出…' },
+    compare: { analyze: '正在按统一维度比较相关商机的关键差异…', compose: '正在形成取舍判断和对应推进建议…' },
+    status: { analyze: '正在核对最近的有效变化与当前阶段事实…', compose: '正在提炼当前状态、未决事项和关键下一步…' },
+    data_gap: { analyze: '正在区分影响判断的关键缺口与普通缺失项…', compose: '正在整理补充顺序、获取方式和具体用途…' },
+    strategy: { analyze: '正在结合客户目标、当前阶段和已有证据选择打法…', compose: '正在形成适配当前商机的推进策略…' },
+    general: { analyze: focused ? '正在围绕指定商机识别本次问题的关键事实…' : '正在识别当前问题涉及的商机与目标…', compose: '正在选择最适合本次问题的回答结构…' },
+  }
+  return plans[intent]
+}
+
 agentRouter.get('/status', ah(async (_req, res) => {
   const runtime = await loadAgentRuntimeConfig()
   try {
@@ -648,6 +664,7 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
   const queryUnderstanding = understandSalesQuery(input.message, [{
     id: opportunity.id, customerName: opportunity.customerName, companyName: opportunity.companyName,
   }])
+  const taskPlan = salesProgressPlan(queryUnderstanding.intent, true)
   const prompt = [
     '任务：OPPORTUNITY_ADVISOR。',
     `用户问题：${input.message}`,
@@ -666,12 +683,12 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
   res.write(`data: ${JSON.stringify({ type: 'session', sessionId })}\n\n`)
-  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: `正在结合${opportunity.customerName}的最新字段、进展和信号分析…` })}\n\n`)
+  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: taskPlan.analyze })}\n\n`)
 
   let upstream: Response | undefined
   try { upstream = await proxyHarnessStream(prompt, sessionId, controller.signal) } catch { /* 使用规则回退 */ }
   if (upstream?.ok && upstream.body) {
-    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: '已完成证据核对，正在组织针对性回答…' })}\n\n`)
+    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose })}\n\n`)
     if (await relayHarnessStream(upstream, res)) {
       res.end()
       return
@@ -704,6 +721,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
     }),
   ])
   const queryUnderstanding = understandSalesQuery(input.message, opportunities)
+  const taskPlan = salesProgressPlan(queryUnderstanding.intent, queryUnderstanding.focusOpportunityIds.length > 0)
   const context = {
     effectiveUser: { id: auth.user.id, name: auth.user.name, role: auth.user.role },
     generatedAt: new Date().toISOString(),
@@ -744,7 +762,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
   res.write(`data: ${JSON.stringify({ type: 'session', sessionId })}\n\n`)
-  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: queryUnderstanding.focusOpportunityIds.length ? '正在核对指定商机的上下文与关键证据…' : '正在从全部商机中识别与问题最相关的对象…' })}\n\n`)
+  res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: taskPlan.analyze })}\n\n`)
 
   let upstream: Response | undefined
   try {
@@ -752,7 +770,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
   } catch { /* 使用下面的规则回退 */ }
 
   if (upstream?.ok && upstream.body) {
-    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: '分析完成，正在生成与本次问题匹配的方案…' })}\n\n`)
+    res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose })}\n\n`)
     if (await relayHarnessStream(upstream, res)) {
       res.end()
       return
