@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
-import { isAdminRole } from '../utils'
+import { canManageChannels, canManageSales, isAdminRole } from '../utils'
 import type { Opportunity } from '../types'
 
 type Period = 'week' | 'month' | 'quarter'
+type TeamScope = 'sales' | 'channel'
 type TrendPoint = { label: string; value: number | null; forecastValue?: number; current?: boolean }
 
 const periodNames: Record<Period, string> = { week: '本周', month: '本月', quarter: '本季度' }
+const teamScopeNames: Record<TeamScope, string> = { sales: '销售团队', channel: '渠道伙伴' }
 const industries = ['3C数码', '家电', '美妆个护', '酒水', '食品饮料', '母婴宠物', '汽车', '其他']
 const budgetMidpoint: Record<string, number> = { under5: 3, '5to10': 7.5, '10to20': 15, '20to50': 35, above50: 60 }
 
@@ -35,8 +37,10 @@ function periodPointLabel(period: Period, offset: number) {
 }
 
 function amountTrend(period: Period, signedAmount: number, pipelineAmount: number): TrendPoint[] {
-  const current = Math.max(1, signedAmount)
-  const forecastAnchor = Math.max(current * 1.08, Math.min(Math.max(pipelineAmount, 1), current * 1.6))
+  const current = Math.max(0, signedAmount)
+  const forecastAnchor = current > 0
+    ? Math.max(current * 1.08, Math.min(Math.max(pipelineAmount, 0), current * 1.6))
+    : Math.max(0, pipelineAmount)
   const actual = [current * .68, current * .78, current * .89, current, null, null, null]
   const forecast = [current * .76, current * .86, current * .97, current * 1.1, forecastAnchor * .82, forecastAnchor * .94, forecastAnchor * 1.06]
   return actual.map((value, index) => ({
@@ -69,7 +73,7 @@ function industryFor(opportunity: Opportunity) {
 }
 
 function formatWan(value: number) {
-  if (!value) return '待确认'
+  if (!value) return '0 万'
   return `${value.toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 万`
 }
 
@@ -105,18 +109,29 @@ function TrendChart({ points, suffix, variant = 'amount', label }: { points: Tre
 export default function Performance() {
   const { opportunities, currentUser } = useStore()
   const [period, setPeriod] = useState<Period>('week')
+  const [teamScope, setTeamScope] = useState<TeamScope>(() => canManageSales(currentUser.role) ? 'sales' : 'channel')
+  const availableTeamScopes = useMemo(() => {
+    const scopes: TeamScope[] = []
+    if (canManageSales(currentUser.role)) scopes.push('sales')
+    if (canManageChannels(currentUser.role)) scopes.push('channel')
+    return scopes
+  }, [currentUser.role])
+  const activeTeamScope = availableTeamScopes.includes(teamScope) ? teamScope : availableTeamScopes[0]
   const visibleOpportunities = useMemo(() => {
-    if (isAdminRole(currentUser.role)) return opportunities
+    if (isAdminRole(currentUser.role)) {
+      if (activeTeamScope === 'channel') return opportunities.filter(opportunity => opportunity.source === 'channel')
+      return opportunities.filter(opportunity => opportunity.source === 'direct')
+    }
     if (currentUser.role === 'channel') return opportunities.filter(opportunity => opportunity.channelId === currentUser.channelId)
     return opportunities.filter(opportunity => opportunity.salesOwnerId === currentUser.id)
-  }, [opportunities, currentUser])
+  }, [activeTeamScope, opportunities, currentUser])
   const signed = visibleOpportunities.filter(opportunity => ['signed', 'delivery'].includes(opportunity.stage))
   const released = visibleOpportunities.filter(opportunity => opportunity.stage === 'released')
   const active = visibleOpportunities.filter(opportunity => !['released', 'closed'].includes(opportunity.stage))
   const runningCount = Math.max(0, active.length - signed.length)
   const signedAmount = signed.reduce((sum, opportunity) => sum + (opportunity.signedAmount ?? budgetMidpoint[opportunity.amountRange] ?? 0), 0)
   const pipelineAmount = active.filter(opportunity => !['signed', 'delivery'].includes(opportunity.stage)).reduce((sum, opportunity) => sum + (budgetMidpoint[opportunity.amountRange] ?? 0), 0)
-  const amountPoints = amountTrend(period, signedAmount || 32, pipelineAmount || 56)
+  const amountPoints = amountTrend(period, signedAmount, pipelineAmount)
   const countPoints = countTrend(period, signed.length)
   const amountMom = Math.round((((amountPoints[3].value ?? 0) - (amountPoints[2].value ?? 0)) / Math.max(1, amountPoints[2].value ?? 0)) * 100)
   const countMom = (countPoints[6].value ?? 0) - (countPoints[5].value ?? 0)
@@ -132,8 +147,11 @@ export default function Performance() {
 
   return <div className="performance-page">
     <section className="performance-filter-bar">
-      <div><h1>业绩看板</h1><p>{periodNames[period]} · 签约金额、Pipeline 预测与目标达成趋势</p></div>
-      <div className="performance-period-segment">{(['week','month','quarter'] as Period[]).map(value => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{periodNames[value]}</button>)}</div>
+      <div><h1>业绩看板</h1><p>{isAdminRole(currentUser.role) && activeTeamScope ? `${teamScopeNames[activeTeamScope]} · ` : ''}{periodNames[period]} · 签约金额、Pipeline 预测与目标达成趋势</p></div>
+      <div className="performance-filter-controls">
+        {isAdminRole(currentUser.role) && <div className="performance-team-segment" aria-label="业绩统计范围">{availableTeamScopes.map(value => <button key={value} className={activeTeamScope === value ? 'active' : ''} onClick={() => setTeamScope(value)}>{teamScopeNames[value]}</button>)}</div>}
+        <div className="performance-period-segment">{(['week','month','quarter'] as Period[]).map(value => <button key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{periodNames[value]}</button>)}</div>
+      </div>
     </section>
 
     <section className="performance-trend-layout">

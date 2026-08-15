@@ -21,6 +21,10 @@ body {
 .performance-filter-bar { display:flex; align-items:center; justify-content:space-between; gap:18px; padding-top:2px; }
 .performance-filter-bar h1 { margin:0; color:#111; font-size:24px; line-height:1.2; }
 .performance-filter-bar p { margin:6px 0 0; color:#64748b; font-size:13px; }
+.performance-filter-controls { display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+.performance-team-segment { display:flex; align-items:center; gap:4px; padding:4px; border:1px solid rgba(14,120,160,.1); border-radius:999px; background:rgba(255,255,255,.72); box-shadow:0 5px 16px rgba(80,140,160,.06); }
+.performance-team-segment button { height:34px; padding:0 14px; color:#607985; border:0; border-radius:999px; background:transparent; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.performance-team-segment button.active { color:#fff; background:linear-gradient(135deg,#0c829b,#126b82); box-shadow:0 6px 15px rgba(12,130,155,.18); }
 .performance-period-segment { display:flex; align-items:center; gap:4px; padding:4px; border-radius:999px; background:rgba(219,235,242,.72); }
 .performance-period-segment button { height:34px; padding:0 14px; color:#64748b; border:0; border-radius:999px; background:transparent; font-size:13px; font-weight:800; cursor:pointer; }
 .performance-period-segment button.active { color:white; background:#111; box-shadow:0 6px 16px rgba(15,23,42,.14); }
@@ -97,6 +101,7 @@ body {
 
 @media (max-width:767px) {
   .performance-filter-bar { align-items:flex-start; flex-direction:column; }
+  .performance-filter-controls { width:100%; flex-wrap:wrap; justify-content:flex-start; }
   .performance-card { padding:18px 16px; border-radius:20px; }
   .performance-card-head { gap:12px; }
   .performance-card-head p { font-size:11px; }
