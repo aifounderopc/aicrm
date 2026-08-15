@@ -236,3 +236,37 @@ model OperationLog {
   @@index([action])
   @@map("operation_logs")
 }
+
+// 外部连接器凭证。密钥只保存 AES-256-GCM 密文，API 永不回传明文。
+model IntegrationConnection {
+  id                 String   @id @default(cuid())
+  provider           String   @unique
+  appId              String   @map("app_id")
+  encryptedAppSecret String   @map("encrypted_app_secret")
+  status             String   @default("disconnected")
+  lastError          String?  @map("last_error")
+  lastConnectedAt    DateTime? @map("last_connected_at")
+  updatedBy          String?  @map("updated_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("integration_connections")
+}
+
+// 飞书长连接接收到的群消息，message_id 作为幂等键避免重试重复入库。
+model FeishuMessage {
+  id          String   @id
+  chatId      String   @map("chat_id")
+  chatName    String   @map("chat_name")
+  senderId    String   @map("sender_id")
+  senderName  String   @map("sender_name")
+  messageType String   @map("message_type")
+  contentRaw  String   @map("content_raw")
+  contentText String   @map("content_text")
+  createdAt   DateTime @map("created_at")
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  @@index([createdAt])
+  @@index([chatId])
+  @@map("feishu_messages")
+}

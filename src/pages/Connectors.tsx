@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronUp, Link2, Mail, MessageSquare, PlayCircle, RefreshCw, Rocket, Settings2, Sparkles, Users, Video, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronUp, Eye, EyeOff, KeyRound, Link2, Mail, MessageSquare, PlayCircle, RefreshCw, Rocket, Settings2, ShieldCheck, Sparkles, Users, Video, X } from 'lucide-react'
 import { useStore } from '../store'
 import { roleName } from '../utils'
+import { ApiError, integrationApi, type FeishuConnectionStatus } from '../api'
 
 type ConnectorStatus = 'connected' | 'not_connected' | 'disabled'
 type SyncStatus = 'healthy' | 'warning' | 'pending_auth' | 'paused'
@@ -12,7 +13,7 @@ type Connector = {
 }
 
 const initialConnectors: Connector[] = [
-  { id: 'feishu', name: '飞书', type: 'IM', status: 'connected', syncStatus: 'healthy', authUser: '当前账号', scope: '私聊、客户群 @、转发消息、指定项目群巡检', sharedTo: '本人商机、管理员可见聚合信号', lastSync: '今天 13:48', nextSync: '15 分钟后', signalCount: 18, syncedItems: 126, desc: '已授权个人身份，可在授权范围内识别客户上下文。' },
+  { id: 'feishu', name: '飞书', type: 'IM', status: 'not_connected', syncStatus: 'pending_auth', authUser: '未配置', scope: '机器人所在群聊的用户消息', sharedTo: '按商机归属权关联展示，管理员可见聚合信号', lastSync: '未接收', nextSync: '长连接实时接收', signalCount: 0, syncedItems: 0, desc: '配置飞书机器人 App ID 与 App Secret 后，通过官方长连接实时接收群消息。' },
   { id: 'wecom', name: '企微', type: 'IM', status: 'not_connected', syncStatus: 'pending_auth', authUser: '未授权', scope: '客户群、外部联系人、会话存档授权范围', sharedTo: '仅同步客户信号摘要', lastSync: '未同步', nextSync: '完成授权后', signalCount: 0, syncedItems: 0, desc: '待接入企微客户群与外部联系人。' },
   { id: 'dingtalk', name: '钉钉', type: 'IM', status: 'not_connected', syncStatus: 'pending_auth', authUser: '未授权', scope: '客户群、项目群、销售转发消息', sharedTo: '按商机归属共享摘要信号', lastSync: '未同步', nextSync: '完成授权后', signalCount: 0, syncedItems: 0, desc: '接入钉钉客户沟通与项目群巡检，持续识别商机进展。' },
   { id: 'jingme', name: '京 Me', type: 'IM', status: 'not_connected', syncStatus: 'pending_auth', authUser: '未授权', scope: '内部协同群、客户项目群、转发线索', sharedTo: '仅生成商机上下文摘要', lastSync: '未同步', nextSync: '完成授权后', signalCount: 0, syncedItems: 0, desc: '接入京 Me 线索流转与项目协同，形成可追踪商机上下文。' },
@@ -39,6 +40,11 @@ function ConnectorBrandLogo({ id }: { id: string }) {
   return <Icon size={22} />
 }
 
+function connectorTime(value: string | null) {
+  if (!value) return '未接收'
+  return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
 export default function Connectors() {
   const currentUser = useStore(s => s.currentUser)
   const [connectors, setConnectors] = useState<Connector[]>(() => {
@@ -52,11 +58,46 @@ export default function Connectors() {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardStep, setWizardStep] = useState(0)
   const [testResult, setTestResult] = useState(false)
+  const [feishuStatus, setFeishuStatus] = useState<FeishuConnectionStatus | null>(null)
+  const [feishuForm, setFeishuForm] = useState({ appId: '', appSecret: '' })
+  const [showFeishuSecret, setShowFeishuSecret] = useState(false)
+  const [savingFeishu, setSavingFeishu] = useState(false)
   const [setup, setSetup] = useState({
     reportMode: '人工确认后报备', trackingGroups: '重点客户群、项目交付群', keyAccounts: '核心品牌客户、重点续约客户', keywords: '预算、Demo、报价、合同、试点、采购',
     triggers: ['群聊 @', '转发消息', '私聊识别', '每日巡检'], autoDraft: '开启', autoOpportunity: '需销售确认', conflictPolicy: '疑似撞单人工确认', protectionDays: 30,
     testText: '客户计划本月启动品牌营销项目，预算约 50 万，希望下周确认方案和交付周期。',
   })
+
+  const applyFeishuStatus = useCallback((status: FeishuConnectionStatus) => {
+    setFeishuStatus(status)
+    setFeishuForm(current => ({ ...current, appId: current.appId || status.appId }))
+    const running = status.configured && ['connected', 'connecting', 'reconnecting'].includes(status.status)
+    setConnectors(items => items.map(item => item.id === 'feishu' ? {
+      ...item,
+      status: running ? 'connected' : 'not_connected',
+      syncStatus: status.status === 'connected' ? 'healthy' : status.status === 'failed' ? 'warning' : 'pending_auth',
+      authUser: status.configured ? '飞书自建应用' : '未配置',
+      lastSync: connectorTime(status.latestMessageAt),
+      nextSync: running ? '长连接实时接收' : '完成配置后',
+      signalCount: status.messageCount,
+      syncedItems: status.messageCount,
+      desc: status.error
+        ? `飞书连接异常：${status.error}`
+        : running
+          ? '飞书机器人长连接已启用，群消息将实时进入 AI 销售伙伴。'
+          : '配置飞书机器人 App ID 与 App Secret 后，通过官方长连接实时接收群消息。',
+    } : item))
+  }, [])
+
+  const refreshFeishu = useCallback(async () => {
+    try { applyFeishuStatus(await integrationApi.feishuStatus()) } catch { /* 本地演示模式保持卡片默认状态 */ }
+  }, [applyFeishuStatus])
+
+  useEffect(() => {
+    void refreshFeishu()
+    const timer = window.setInterval(() => { void refreshFeishu() }, 10_000)
+    return () => window.clearInterval(timer)
+  }, [refreshFeishu])
 
   useEffect(() => { localStorage.setItem('jm-crm-connectors', JSON.stringify(connectors)) }, [connectors])
   const stats = useMemo(() => ({ connected: connectors.filter(c => c.status === 'connected').length, healthy: connectors.filter(c => c.syncStatus === 'healthy').length, warnings: connectors.filter(c => c.syncStatus === 'warning' || c.status === 'not_connected').length, signals: connectors.reduce((sum, c) => sum + c.signalCount, 0) }), [connectors])
@@ -65,8 +106,31 @@ export default function Connectors() {
   const authorize = (id: string) => {
     const target = connectors.find(c => c.id === id)
     if (!target) return
+    if (id === 'feishu') {
+      setExpanded('feishu')
+      notify('请在范围设置中配置飞书机器人凭证')
+      return
+    }
     setConnectors(items => items.map(c => c.id === id ? { ...c, status: 'connected', syncStatus: 'healthy', authUser: currentUser.name, lastSync: '刚刚', nextSync: '15 分钟后', signalCount: c.signalCount || (id === 'email' ? 6 : 3), desc: `${c.name} 连接健康，AI 可在授权范围内识别客户上下文。` } : c))
     notify(`${target.name} 授权和连接测试成功`)
+  }
+  const saveFeishu = async () => {
+    if (!feishuForm.appId.trim()) { notify('请输入飞书 App ID'); return }
+    if (!feishuStatus?.hasSecret && !feishuForm.appSecret.trim()) { notify('请输入飞书 App Secret'); return }
+    setSavingFeishu(true)
+    try {
+      await integrationApi.configureFeishu({
+        appId: feishuForm.appId.trim(),
+        appSecret: feishuForm.appSecret.trim() || undefined,
+      })
+      setFeishuForm(current => ({ ...current, appSecret: '' }))
+      notify('飞书鉴权成功，群消息长连接已启用')
+      await refreshFeishu()
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : '飞书连接失败，请检查凭证和应用权限')
+    } finally {
+      setSavingFeishu(false)
+    }
   }
   const sync = (ids: string[]) => {
     const valid = connectors.filter(c => ids.includes(c.id) && c.status === 'connected').map(c => c.id)
@@ -123,7 +187,15 @@ export default function Connectors() {
         <p className="connector-description">{item.desc}</p>
         <div className="connector-meta"><div><span>授权账号</span><strong>{item.authUser}</strong></div><div><span>最近同步</span><strong>{item.lastSync}</strong></div><div><span>下次同步</span><strong>{item.nextSync}</strong></div><div><span>识别信号</span><strong>{item.signalCount} 条</strong></div></div>
         <div className={`connector-scope ${open ? 'open' : ''}`}><div><span>同步范围</span><p>{item.scope}</p></div><div><span>共享范围</span><p>{item.sharedTo}</p></div><div><span>已处理记录</span><p>{item.syncedItems} 条</p></div></div>
-        <div className="connector-actions"><button className={item.status === 'connected' ? 'secondary' : 'primary'} onClick={() => authorize(item.id)}>{item.status === 'connected' ? '重新测试' : `授权${item.name}`}</button><button className="secondary" disabled={item.status !== 'connected' || isSyncing} onClick={() => sync([item.id])}><RefreshCw size={13} className={isSyncing ? 'spin' : ''} /> {isSyncing ? '同步中' : '立即同步'}</button><button className="ghost" onClick={() => setExpanded(open ? null : item.id)}>范围设置 {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button></div>
+        {item.id === 'feishu' && open && <div className="feishu-credential-panel">
+          <div className="feishu-credential-heading"><span><ShieldCheck size={16} /> 飞书机器人凭证</span><p>App Secret 仅会加密保存在服务端，不会回传到浏览器。</p></div>
+          <div className="feishu-credential-fields">
+            <label><span>App ID</span><input value={feishuForm.appId} onChange={event => setFeishuForm(current => ({ ...current, appId: event.target.value }))} placeholder="cli_xxxxxxxxxxxxxxxx" autoComplete="off" /></label>
+            <label><span>App Secret</span><div className="feishu-secret-input"><input type={showFeishuSecret ? 'text' : 'password'} value={feishuForm.appSecret} onChange={event => setFeishuForm(current => ({ ...current, appSecret: event.target.value }))} placeholder={feishuStatus?.hasSecret ? '已安全保存，留空表示不修改' : '请输入 App Secret'} autoComplete="new-password" /><button type="button" onClick={() => setShowFeishuSecret(value => !value)} aria-label={showFeishuSecret ? '隐藏 App Secret' : '显示 App Secret'}>{showFeishuSecret ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
+          </div>
+          <div className="feishu-credential-footer"><div><i className={feishuStatus?.status ?? 'idle'} /><span>{feishuStatus?.status === 'connected' ? '长连接正常' : feishuStatus?.status === 'connecting' ? '正在建立长连接' : feishuStatus?.status === 'reconnecting' ? '正在重连' : feishuStatus?.status === 'failed' ? '连接异常' : '待配置'}</span></div><button className="feishu-save-button" onClick={() => void saveFeishu()} disabled={savingFeishu}><KeyRound size={14} /> {savingFeishu ? '验证并连接中…' : feishuStatus?.configured ? '保存并重新测试' : '保存并连接'}</button></div>
+        </div>}
+        <div className="connector-actions"><button className={item.status === 'connected' ? 'secondary' : 'primary'} onClick={() => authorize(item.id)}>{item.id === 'feishu' && item.status === 'connected' ? '连接配置' : item.status === 'connected' ? '重新测试' : `授权${item.name}`}</button><button className="secondary" disabled={item.id !== 'feishu' && (item.status !== 'connected' || isSyncing)} onClick={() => item.id === 'feishu' ? void refreshFeishu() : sync([item.id])}><RefreshCw size={13} className={isSyncing ? 'spin' : ''} /> {item.id === 'feishu' ? '刷新状态' : isSyncing ? '同步中' : '立即同步'}</button><button className="ghost" onClick={() => setExpanded(open ? null : item.id)}>范围设置 {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</button></div>
       </article>
     })}</div>
   </section>

@@ -15,4 +15,6 @@ export const config = {
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173').split(',').map(s => s.trim()),
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   isProd: process.env.NODE_ENV === 'production',
+  feishuAppId: process.env.FEISHU_APP_ID,
+  feishuAppSecret: process.env.FEISHU_APP_SECRET,
 }

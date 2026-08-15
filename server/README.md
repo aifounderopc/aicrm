@@ -5,7 +5,7 @@ Node + TypeScript + Express + Prisma(PostgreSQL)。实现见 `BACKEND_DESIGN.md`
 ## 当前进度
 已完成（可运行的核心骨架）：
 - ✅ 工程脚手架、配置、错误处理、统一 `/api` 前缀
-- ✅ **数据模型**（Prisma schema，11 张表，含敏感字段加密列与撞单归一化索引）
+- ✅ **数据模型**（Prisma schema，含敏感字段加密列、飞书连接配置与消息表）
 - ✅ **安全基础**：bcrypt 密码哈希、JWT(httpOnly cookie)、AES-256-GCM 字段加密、撞单算法、审计日志、登录限频、helmet/CORS
 - ✅ **auth 模块**：login/logout/me/impersonate(代理访问鉴权)/change-password
 - ✅ **opportunities 模块**：列表(按角色过滤)/撞单预检/创建(服务端二次撞单+事务+加密)/改阶段(自动锁定)/解密联系人(限角色+审计)
@@ -16,6 +16,7 @@ Node + TypeScript + Express + Prisma(PostgreSQL)。实现见 `BACKEND_DESIGN.md`
 - ✅ **notifications 模块**：本人通知/高优事项/标记已读
 - ✅ **logs 模块**：只读、分页筛选、限管理类角色
 - ✅ **保护期自动释放 + 到期提醒**（`src/jobs/autoRelease.ts`，开发内置定时器，生产换京东云定时任务）
+- ✅ **飞书群消息长连接**：官方 SDK WebSocket 接收、凭证鉴权、加密存储、消息幂等入库与按权限查询
 
 - ✅ **续期/举证/进展**：申请续期、批准/拒绝(+30天)、举证审核通过/驳回、进展上报；释放/冻结/删除商机；均带站内通知 + 审计
 
@@ -33,6 +34,18 @@ npm run seed                  # 写初始账号
 npm run dev                   # http://localhost:3000/api
 ```
 前端 `npm run dev`（5173）通过 Vite 代理 `/api` → 后端 3000，即可联调。
+
+## 飞书连接器
+
+可在 Web 端“连接器 → 飞书 → 范围设置”配置 App ID / App Secret，也可使用 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 环境变量。数据库中只保存 App Secret 的 AES-256-GCM 密文。
+
+飞书开发者后台需要：
+
+- 启用“使用长连接接收事件”。
+- 添加 `im.message.receive_v1`（接收消息 v2.0）事件。
+- 开通 `im:message.group_msg` 以及查询群和用户名称所需权限，发布应用版本并将机器人加入目标群。
+
+对 Harness Agent 提供的数据入口：`GET /api/integrations/feishu/messages?limit=50`，返回当前用户有权访问的群名称、群 ID、消息内容、时间和发送人。
 
 ## 生成密钥
 ```bash

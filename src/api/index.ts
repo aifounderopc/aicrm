@@ -17,3 +17,6 @@ export { notificationApi } from './notifications'
 
 export { logApi } from './logs'
 export type { LogQuery } from './logs'
+
+export { integrationApi } from './integrations'
+export type { FeishuConnectionStatus, FeishuMessage } from './integrations'

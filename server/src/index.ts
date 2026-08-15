@@ -11,6 +11,8 @@ import { channelRouter } from './modules/channels/channels.routes.js'
 import { userRouter } from './modules/users/users.routes.js'
 import { notificationRouter } from './modules/notifications/notifications.routes.js'
 import { logRouter } from './modules/logs/logs.routes.js'
+import { integrationRouter } from './modules/integrations/integrations.routes.js'
+import { activateFeishuReceiver } from './modules/feishu/feishu.service.js'
 import { scheduleAutoRelease } from './jobs/autoRelease.js'
 
 const app = express()
@@ -29,6 +31,7 @@ app.use('/api/channels', channelRouter)
 app.use('/api/users', userRouter)
 app.use('/api/notifications', notificationRouter)
 app.use('/api/logs', logRouter)
+app.use('/api/integrations', integrationRouter)
 
 app.use(errorHandler)
 
@@ -36,4 +39,7 @@ app.listen(config.port, () => {
   console.log(`✅ JoyMarketing CRM API 已启动: http://localhost:${config.port}/api`)
   // 保护期自动释放（开发用内置定时器；生产改用京东云定时任务调用 runAutoRelease）
   scheduleAutoRelease()
+  void activateFeishuReceiver().catch(error => {
+    console.error('[feishu] receiver startup failed', error instanceof Error ? error.message : 'unknown error')
+  })
 })

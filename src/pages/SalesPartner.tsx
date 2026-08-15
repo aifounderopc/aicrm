@@ -4,10 +4,12 @@ import { BarChart3, CalendarDays, Check, ChevronRight, Clock3, Copy, Download, M
 import { useStore } from '../store'
 import { amountLabel, daysUntil } from '../utils'
 import type { Opportunity } from '../types'
+import { integrationApi, type FeishuMessage } from '../api'
 
 type ChatMessage = { role: 'assistant' | 'user'; text: string }
 type SignalChannel = 'all' | 'feishu' | 'email' | 'meeting' | 'jingme'
 type SideTab = 'processing' | 'stable' | 'suggestions'
+type SalesSignal = { id: string; opportunityId?: string; channel: Exclude<SignalChannel, 'all'>; time: string; title: string; tag: string; summary: string }
 
 const channelMeta: Record<Exclude<SignalChannel, 'all'>, { label: string; color: string; bg: string }> = {
   feishu: { label: '飞书', color: '#2563eb', bg: '#eff6ff' },
@@ -47,6 +49,13 @@ function signalTime(value: string) {
   return `${dayDiff === 0 ? '今天' : `${dayDiff} 天前`} ${time}`
 }
 
+function feishuSignalType(content: string) {
+  if (/签约|合同|盖章|交付/.test(content)) return '签约推进'
+  if (/报价|预算|价格|采购/.test(content)) return '报价谈判'
+  if (/确认|同意|通过|排期/.test(content)) return '需求确认'
+  return '需求更新'
+}
+
 export default function SalesPartner() {
   const { currentUser, opportunities } = useStore()
   const navigate = useNavigate()
@@ -58,6 +67,7 @@ export default function SalesPartner() {
   const [sideTab, setSideTab] = useState<SideTab>('processing')
   const [approvalResults, setApprovalResults] = useState<Record<string, 'confirmed' | 'rejected'>>({})
   const [reportAction, setReportAction] = useState<'copied' | 'exported' | null>(null)
+  const [feishuMessages, setFeishuMessages] = useState<FeishuMessage[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', text: '我会结合 CRM 商机、连接器上下文、保护状态和跟进记录，帮你判断今天该推进谁、怎么推进。' },
   ])
@@ -66,6 +76,19 @@ export default function SalesPartner() {
   useEffect(() => {
     document.body.classList.add('ai-partner-open')
     return () => document.body.classList.remove('ai-partner-open')
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const items = await integrationApi.feishuMessages(50)
+        if (active) setFeishuMessages(items)
+      } catch { /* 本地演示模式保留 CRM 模拟信号 */ }
+    }
+    void load()
+    const timer = window.setInterval(() => { void load() }, 5_000)
+    return () => { active = false; window.clearInterval(timer) }
   }, [])
 
   const visibleOpps = useMemo(() => {
@@ -83,13 +106,12 @@ export default function SalesPartner() {
     active.find(opp => opp.customerName.startsWith('宝洁（衣清）')) ?? active.find(opp => opp.customerName.startsWith('宝洁')),
   ].filter((opp): opp is Opportunity => Boolean(opp))
   const featuredSignalIds = new Set(featuredSignals.map(opp => opp.id))
-  const signals = [
+  const opportunitySignals: SalesSignal[] = [
     ...featuredSignals,
     ...active
       .filter(opp => !featuredSignalIds.has(opp.id))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
   ]
-    .slice(0, 50)
     .map((opp, index) => {
       const featured = featuredSignalIds.has(opp.id)
       const channel = featured ? 'feishu' : channels[index % channels.length]
@@ -106,6 +128,28 @@ export default function SalesPartner() {
           : `「${stageText(opp.stage)}」${opp.requirementDescription.slice(0, 54)}${opp.requirementDescription.length > 54 ? '…' : ''}`,
       }
     })
+  const liveFeishuSignals: SalesSignal[] = feishuMessages.map(message => {
+    const matchedOpportunity = active.find(opp =>
+      message.chatName.includes(opp.customerName)
+      || message.content.includes(opp.customerName)
+      || (opp.companyName && (message.chatName.includes(opp.companyName) || message.content.includes(opp.companyName))),
+    )
+    const detail = `${message.senderName}：${message.content}`
+    return {
+      id: `feishu-${message.id}`,
+      opportunityId: matchedOpportunity?.id,
+      channel: 'feishu',
+      time: signalTime(message.createdAt),
+      title: message.chatName,
+      tag: feishuSignalType(message.content),
+      summary: `${detail.slice(0, 90)}${detail.length > 90 ? '…' : ''}`,
+    }
+  })
+  const signals: SalesSignal[] = [
+    ...opportunitySignals.slice(0, featuredSignals.length),
+    ...liveFeishuSignals,
+    ...opportunitySignals.slice(featuredSignals.length),
+  ].slice(0, 50)
   const visibleSignals = signals.filter(s => filter === 'all' || s.channel === filter)
 
   const suggestions = [
@@ -319,7 +363,7 @@ export default function SalesPartner() {
         <div className="ai-panel-title"><span className="ai-kicker"><Sparkles size={14} /> 商机实时信号</span><b>{visibleSignals.length} 条</b></div>
         <div className="ai-filter-row">{(['all', 'jingme', 'feishu', 'email', 'meeting'] as SignalChannel[]).map(id => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{id === 'all' ? '全部' : channelMeta[id].label}</button>)}</div>
         <div className="ai-signal-list">
-          {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; return <button key={item.id} className="ai-signal-item" onClick={() => navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span>{item.tag}</span></div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">该渠道暂无新信号</div>}
+          {visibleSignals.length ? visibleSignals.map(item => { const meta = channelMeta[item.channel]; return <button key={item.id} className={`ai-signal-item ${item.opportunityId ? '' : 'source-only'}`} onClick={() => item.opportunityId && navigate(`/opportunity/${item.opportunityId}`)}><span className="ai-signal-time">{item.time}</span><i style={{ background: meta.color }} /><div><div className="ai-signal-tags"><em style={{ color: meta.color, background: meta.bg }}>{meta.label}</em><span>{item.tag}</span></div><strong>{item.title}</strong><p>{item.summary}</p></div></button> }) : <div className="ai-empty">该渠道暂无新信号</div>}
         </div>
       </aside>
 
