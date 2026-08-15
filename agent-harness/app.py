@@ -46,8 +46,9 @@ class RunInput(BaseModel):
 def candidate_inputs(body: RunInput) -> list[RunInput]:
     candidates = [body]
     candidates.extend(body.model_copy(update={
+        "session_id": f"{body.session_id}--fallback-{index}"[-160:],
         "model": item.model, "base_url": item.base_url, "api_key": item.api_key, "fallback_models": [],
-    }) for item in body.fallback_models)
+    }) for index, item in enumerate(body.fallback_models, start=1))
     return candidates
 
 
@@ -115,7 +116,7 @@ def run_agent(body: RunInput) -> dict[str, Any]:
             if not (result.final_response or "").strip():
                 raise RuntimeError("model returned an empty response")
             return {
-                "sessionId": result.session_id,
+                "sessionId": body.session_id,
                 "content": result.final_response,
                 "finishReason": result.finish_reason,
                 "model": candidate.model or MODEL,
@@ -164,7 +165,7 @@ def stream_agent(body: RunInput) -> StreamingResponse:
                     raise RuntimeError("model returned an empty response")
                 if not emitted and result.final_response:
                     events.put({"type": "delta", "content": result.final_response})
-                events.put({"type": "done", "sessionId": result.session_id, "finishReason": result.finish_reason, "model": candidate.model or MODEL, "fallbackUsed": index > 0})
+                events.put({"type": "done", "sessionId": body.session_id, "finishReason": result.finish_reason, "model": candidate.model or MODEL, "fallbackUsed": index > 0})
                 events.put(None)
                 return
             except Exception as exc:
