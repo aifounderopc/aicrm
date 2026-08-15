@@ -29,7 +29,14 @@ export async function loadAgentRuntimeConfigs(): Promise<AgentRuntimeConfig[]> {
     responsePrompt: stored?.responsePrompt ?? DEFAULT_RESPONSE_PROMPT,
   }
   const systemPrompt = assembleAgentSystemPrompt(editable)
-  if (models.length) return models.map(item => ({
+  const rankedModels = [...models].sort((a, b) => {
+    const statusRank = (status: string | null) => status === 'healthy' ? 0 : status === 'failed' ? 2 : 1
+    return statusRank(a.lastStatus) - statusRank(b.lastStatus)
+      || Number(b.isDefault) - Number(a.isDefault)
+      || a.priority - b.priority
+      || a.createdAt.getTime() - b.createdAt.getTime()
+  })
+  if (rankedModels.length) return rankedModels.map(item => ({
     id: item.id, name: item.name, model: item.model, baseUrl: item.baseUrl,
     apiKey: decryptField(item.encryptedApiKey), ...editable, systemPrompt,
   }))

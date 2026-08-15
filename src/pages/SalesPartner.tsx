@@ -132,7 +132,7 @@ function AnalysisTrack({ steps, currentStep, complete = false }: { steps: string
 }
 
 function AnalysisProgress({ status, seconds, steps, currentStep }: { phase: ThinkingPhase; status: string; seconds: number; steps: string[]; currentStep: number }) {
-  return <div className="ai-analysis-progress"><header><span><Sparkles size={12} /> 本次任务规划</span><small>{seconds} 秒</small></header><AnalysisTrack steps={steps} currentStep={currentStep} /><p>{status}</p></div>
+  return <div className="ai-analysis-progress"><header><div><span><Sparkles size={12} /> 本次任务规划</span><p className="ai-analysis-live-status"><i />{status}</p></div><small>{seconds} 秒</small></header><AnalysisTrack steps={steps} currentStep={currentStep} /></div>
 }
 
 function AnalysisComplete({ seconds, evidence, steps }: { seconds: number; evidence: string[]; steps: string[] }) {

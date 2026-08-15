@@ -521,7 +521,12 @@ async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
   let buffer = ''
   let deliveredText = false
   let completed = false
-  const firstOutputDeadline = Date.now() + 9_500
+  let completedModel = ''
+  const failedModels = new Set<string>()
+  // Some compatible providers buffer their reasoning and emit the first text
+  // only after the answer is ready. Keep the deadline on first output only,
+  // but allow enough time to avoid treating normal buffered responses as down.
+  const firstOutputDeadline = Date.now() + 25_000
   const readNext = async () => {
     if (deliveredText) return reader.read()
     const remaining = firstOutputDeadline - Date.now()
@@ -539,11 +544,16 @@ async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
   const relayFrame = (frame: string) => {
     const data = frame.split('\n').find(line => line.startsWith('data: '))?.slice(6)
     if (!data) return
-    const event = JSON.parse(data) as { type?: string; content?: string }
-    if (event.type === 'error') throw new Error('Agent upstream error')
+    const event = JSON.parse(data) as { type?: string; content?: string; model?: string; failedModel?: string; failedModels?: string[] }
+    if (event.failedModel) failedModels.add(event.failedModel)
+    for (const model of event.failedModels ?? []) failedModels.add(model)
+    if (event.type === 'error') {
+      if (failedModels.size) void prisma.agentModelConfiguration.updateMany({ where: { model: { in: [...failedModels] } }, data: { lastStatus: 'failed', lastCheckedAt: new Date() } }).catch(() => undefined)
+      throw new Error('Agent upstream error')
+    }
     if (event.type === 'session') return
     if (event.type === 'delta' && event.content) deliveredText = true
-    if (event.type === 'done') completed = true
+    if (event.type === 'done') { completed = true; completedModel = event.model ?? '' }
     res.write(`data: ${data}\n\n`)
   }
   try {
@@ -556,6 +566,11 @@ async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
       if (done) break
     }
     if (buffer.trim()) relayFrame(buffer)
+    if (completedModel) {
+      void prisma.agentModelConfiguration.updateMany({ where: { model: completedModel }, data: { lastStatus: 'healthy', lastError: null, lastCheckedAt: new Date() } }).catch(() => undefined)
+      failedModels.delete(completedModel)
+    }
+    if (failedModels.size) void prisma.agentModelConfiguration.updateMany({ where: { model: { in: [...failedModels] } }, data: { lastStatus: 'failed', lastCheckedAt: new Date() } }).catch(() => undefined)
     return deliveredText && completed
   } catch {
     await reader.cancel().catch(() => undefined)

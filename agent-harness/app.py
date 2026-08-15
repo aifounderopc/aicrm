@@ -164,6 +164,7 @@ def stream_agent(body: RunInput) -> StreamingResponse:
                     events.put({"type": "delta", "content": text})
 
         errors: list[str] = []
+        failed_models: list[str] = []
         candidates = candidate_inputs(body)
         for index, candidate in enumerate(candidates):
             emitted = False
@@ -179,9 +180,10 @@ def stream_agent(body: RunInput) -> StreamingResponse:
                 return
             except Exception as exc:
                 errors.append(str(exc)[:180])
+                failed_models.append(candidate.model or MODEL)
                 if index < len(candidates) - 1:
-                    events.put({"type": "progress", "stage": "reasoning", "label": f"模型 {candidate.model or MODEL} 暂不可用，正在切换备用模型…"})
-        events.put({"type": "error", "message": f"All configured models failed: {' | '.join(errors)}"[:500]})
+                    events.put({"type": "progress", "stage": "reasoning", "label": f"模型 {candidate.model or MODEL} 暂不可用，正在切换备用模型…", "failedModel": candidate.model or MODEL})
+        events.put({"type": "error", "message": f"All configured models failed: {' | '.join(errors)}"[:500], "failedModels": failed_models})
         events.put(None)
 
     threading.Thread(target=worker, daemon=True).start()
