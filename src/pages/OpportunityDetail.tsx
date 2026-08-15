@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Plus, Trash2, Eye, CircleHelp } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Plus, Trash2, Eye, CircleHelp, Bot, Copy, Check, LoaderCircle } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
-import { opportunityApi, ApiError } from '../api'
+import { opportunityApi, agentApi, ApiError } from '../api'
 
 const stageConfig: Record<string, { bg: string; text: string; bar: string }> = {
   reporting: { bg: '#f3f4f6', text: '#374151', bar: '#9ca3af' },
@@ -32,6 +32,7 @@ const pipelineOrder: Record<string, number> = { reporting: 0, contacting: 1, pro
 
 type GroupBinding = { channel: string; groupId: string; groupName: string }
 type GroupInspectionConfig = { enabled: boolean; frequency: string; time: string; range: string; output: string; groups: GroupBinding[] }
+type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text: string }
 
 const inputStyle = {
   width: '100%', padding: '10px 13px', fontSize: 13,
@@ -91,6 +92,13 @@ export default function OpportunityDetail() {
   const [groupSaved, setGroupSaved] = useState(false)
   const [groupError, setGroupError] = useState('')
   const [groupConfig, setGroupConfig] = useState<GroupInspectionConfig>({ enabled: true, frequency: '每日', time: '20:00', range: '最近 24 小时消息', output: '生成商机维护报告', groups: [{ channel: '飞书', groupId: '', groupName: '' }] })
+  const [advisorMessages, setAdvisorMessages] = useState<AdvisorMessage[]>([])
+  const [advisorInput, setAdvisorInput] = useState('')
+  const [advisorResponding, setAdvisorResponding] = useState(false)
+  const [advisorCopiedId, setAdvisorCopiedId] = useState<string | null>(null)
+  const advisorSessionRef = useRef<string | undefined>(undefined)
+  const advisorAbortRef = useRef<AbortController | null>(null)
+  const advisorScrollRef = useRef<HTMLDivElement>(null)
 
   // 每天 0 点自动刷新剩余天数（页面长时间挂着也能跨天更新）
   const [, setDayTick] = useState(0)
@@ -113,6 +121,20 @@ export default function OpportunityDetail() {
     setContactError('')
     setShowContactConfirm(false)
   }, [contactOpportunityId])
+
+  useEffect(() => {
+    advisorAbortRef.current?.abort()
+    advisorSessionRef.current = undefined
+    setAdvisorMessages([])
+    setAdvisorInput('')
+    setAdvisorResponding(false)
+  }, [contactOpportunityId])
+
+  useEffect(() => {
+    advisorScrollRef.current?.scrollTo({ top: advisorScrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [advisorMessages])
+
+  useEffect(() => () => advisorAbortRef.current?.abort(), [])
 
   useEffect(() => {
     if (!contactOpportunityId) return
@@ -276,7 +298,6 @@ export default function OpportunityDetail() {
   const nextAction = opp.stage === 'reporting' ? '确认关键需求与预算，预约下一轮沟通' : ['contacting', 'proposal'].includes(opp.stage) ? '完善需求方案并推动客户确认' : ['negotiation', 'signing'].includes(opp.stage) ? '推进报价谈判与签约时间' : opp.stage === 'signed' ? '同步交付计划与关键里程碑' : opp.stage === 'delivery' ? '跟进交付验收与客户反馈' : '确认是否重新激活商机'
   const productInterestOptions = ['JM 声访', 'JM 外呼']
   const productInterests = opp.productInterests?.filter(item => productInterestOptions.includes(item)) || [productInterestOptions[0]]
-  const productInterest = productInterests.join('、')
   const demandDescription = opp.requirementDescription?.trim() || ''
   const demandDescriptionChars = Array.from(demandDescription)
   const demandDescriptionDisplay = demandDescriptionChars.length > 120 ? `${demandDescriptionChars.slice(0, 120).join('')}…` : demandDescription
@@ -302,6 +323,37 @@ export default function OpportunityDetail() {
     { id: 'ai-summary', at: opp.updatedAt, title: 'AI 销售伙伴总结', body: `${opp.customerName}当前处于「${stageName(opp.stage)}」，商机健康度 ${healthScore} 分。${riskText}`, type: 'ai', label: 'AI 总结' },
     { id: 'context', at: opp.reportedAt, title: `${opp.source === 'channel' ? opp.channelName || '渠道报备' : '销售报备'} · 商机上下文`, body: opp.requirementDescription || `${opp.customerName}的商机信息已进入上下文，等待补充具体需求。`, type: 'context', label: '商机上下文' },
   ].sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime()).map(item => ({ ...item, ...timelineStamp(item.at) }))
+
+  const askAdvisor = async (question = advisorInput) => {
+    const text = question.trim()
+    if (!text || advisorResponding) return
+    const userMessage: AdvisorMessage = { id: `user-${Date.now()}`, role: 'user', text }
+    const answerId = `assistant-${Date.now()}`
+    setAdvisorMessages(items => [...items, userMessage, { id: answerId, role: 'assistant', text: '' }])
+    setAdvisorInput('')
+    setAdvisorResponding(true)
+    const controller = new AbortController()
+    advisorAbortRef.current = controller
+    try {
+      await agentApi.streamOpportunityChat(opp.id, { message: text, sessionId: advisorSessionRef.current }, event => {
+        if (event.type === 'session') advisorSessionRef.current = event.sessionId
+        if (event.type === 'delta') setAdvisorMessages(items => items.map(item => item.id === answerId ? { ...item, text: item.text + event.content } : item))
+        if (event.type === 'error') throw new Error(event.message)
+      }, controller.signal)
+    } catch {
+      setAdvisorMessages(items => items.map(item => item.id === answerId
+        ? { ...item, text: item.text || '商机参谋暂时无法响应，请稍后重试。' } : item))
+    } finally {
+      setAdvisorResponding(false)
+      advisorAbortRef.current = null
+    }
+  }
+
+  const copyAdvisorMessage = async (message: AdvisorMessage) => {
+    await navigator.clipboard.writeText(message.text)
+    setAdvisorCopiedId(message.id)
+    window.setTimeout(() => setAdvisorCopiedId(current => current === message.id ? null : current), 1500)
+  }
 
   return (
     <div>
@@ -425,13 +477,29 @@ export default function OpportunityDetail() {
             <div className="sx-protection-meta"><div><span>销售负责人</span><strong>{opp.salesOwnerName}</strong></div><div><span>报备时间</span><strong>{formatDate(opp.reportedAt)}</strong></div><div><span>来源类型</span><strong>{opp.source === 'channel' ? '渠道伙伴' : '销售自报'}</strong></div><div><span>渠道经理</span><strong>{opp.channelManagerName || '—'}</strong></div></div>
           </article>
 
-          <article className="sx-panel sx-ai-panel">
-            <header className="sx-panel-head"><div><span>OPPORTUNITY X-RAY</span><h2>Scale X 商机参谋</h2></div><Sparkles size={18} /></header>
-            <section className="hero"><h3>商机解读</h3><p>{opp.customerName}当前处于{stageName(opp.stage)}阶段，{intentLevel}，健康度 {healthScore} 分。</p></section>
-            <section><h3>赢单机会</h3><ul><li>{productInterest}与客户当前需求场景匹配。</li><li>预算口径为{amountLabel(opp.amountRange)}。</li></ul></section>
-            <section className="risk"><h3>风险提醒</h3><ul><li>{riskText}</li></ul></section>
-            <section><h3>下一步行动</h3><ul><li>{nextAction}</li><li>{groupSaved ? '持续关注商机群巡检报告。' : '建议配置商机群巡检，自动沉淀客户上下文。'}</li></ul></section>
-            <button className="sx-script-btn" onClick={() => navigate(`/?prompt=${encodeURIComponent(`帮我为${opp.customerName}生成跟进话术`)}`)}><Sparkles size={14} />生成跟进话术</button>
+          <article className="sx-panel sx-ai-panel sx-advisor-panel">
+            <header className="sx-panel-head sx-advisor-head"><div><span>OPPORTUNITY ADVISOR</span><h2>Scale X 商机参谋</h2></div><div className="sx-advisor-online"><i />Agent 在线</div></header>
+            <div className="sx-advisor-brief">
+              <div><span>当前判断</span><strong>{stageName(opp.stage)} · {intentLevel}</strong></div>
+              <div><span>商机健康度</span><strong>{healthScore} 分</strong></div>
+              <div className={!opp.lockedPermanently && days <= 7 ? 'warning' : ''}><span>首要关注</span><strong>{!opp.lockedPermanently && days <= 7 ? `保护期剩 ${Math.max(days, 0)} 天` : progressReports.length ? '跟进最新客户反馈' : '补齐推进记录'}</strong></div>
+            </div>
+            <div className="sx-advisor-quick">
+              {['分析当前商机', '下一步怎么推进', '总结最新飞书信号', '检查字段缺失', '生成客户沟通话术'].map(item => <button key={item} onClick={() => askAdvisor(item)} disabled={advisorResponding}>{item}</button>)}
+            </div>
+            <div className={`sx-advisor-chat ${advisorMessages.length ? 'active' : ''}`} ref={advisorScrollRef}>
+              {!advisorMessages.length && <div className="sx-advisor-empty"><span><Bot size={17} /></span><div><strong>已接入该商机完整上下文</strong><p>可分析 CRM 字段、推进记录、飞书信号、合同、保护状态和资料缺口。选择上方问题或直接提问。</p></div></div>}
+              {advisorMessages.map(message => <div key={message.id} className={`sx-advisor-message ${message.role}`}>
+                {message.role === 'assistant' && <span className="avatar"><Sparkles size={13} /></span>}
+                <div><p>{message.text || '正在结合商机上下文分析…'}</p>{message.role === 'assistant' && message.text && <button onClick={() => copyAdvisorMessage(message)} title="复制回答">{advisorCopiedId === message.id ? <Check size={12} /> : <Copy size={12} />}</button>}</div>
+              </div>)}
+              {advisorResponding && advisorMessages.at(-1)?.text && <div className="sx-advisor-thinking"><LoaderCircle size={12} className="spin" />持续分析中</div>}
+            </div>
+            <form className="sx-advisor-input" onSubmit={event => { event.preventDefault(); void askAdvisor() }}>
+              <textarea value={advisorInput} onChange={event => setAdvisorInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void askAdvisor() } }} placeholder={`询问 ${opp.customerName} 的风险、策略或推进话术…`} rows={2} disabled={advisorResponding} />
+              <button type="submit" disabled={!advisorInput.trim() || advisorResponding} aria-label="发送给商机参谋">{advisorResponding ? <LoaderCircle size={15} className="spin" /> : <Send size={15} />}</button>
+            </form>
+            <footer>Scale X 仅基于你有权访问的 CRM 与连接器数据提供分析</footer>
           </article>
         </aside>
       </section>

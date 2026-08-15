@@ -36,6 +36,15 @@ progressSummary 仅在出现已确认需求、报价/预算变化、合同/签�
 shouldAppendProgress 必须与 progressSummary 是否存在保持一致。
 完整格式：{"signalType":"需求更新","matchedOpportunityId":null,"confidence":0,"summary":"","suggestedStage":null,"requirementDescription":null,"companyName":null,"contactName":null,"contactPhone":null,"contactDepartment":null,"productInterests":[],"progressSummary":null,"shouldAppendProgress":false}`
 
+const IMMUTABLE_OPPORTUNITY_ADVISOR_PROTOCOL = `【商机参谋协议｜不可编辑】
+任务为 OPPORTUNITY_ADVISOR 时：
+- 只分析当前商机的服务端授权上下文，不将其他客户、其他销售或未提供的数据混入答案。
+- 先给明确结论，再给关键依据和可执行下一步；事实、推断、建议必须清楚区分。
+- 引用推进记录或连接器信号时，尽量标明来源与时间；信息冲突时以时间更新、可信度更高的事实为准并提示冲突。
+- 可完成商机诊断、风险判断、字段缺口检查、下一步行动拆解、会议准备和客户沟通话术生成；话术不得编造报价、案例、承诺或交付时间。
+- 联系人姓名仅在授权上下文明确提供时使用；不得索取、复述或推断手机号、邮箱、密钥等敏感值。
+- 当前能力是只读分析。除非服务端明确返回写入成功，不得声称已经更新字段、发送消息、推进阶段或执行审批。`
+
 export function assembleAgentSystemPrompt(input: {
   soulPrompt: string
   businessPrompt: string
@@ -48,5 +57,6 @@ export function assembleAgentSystemPrompt(input: {
     `【业务策略｜管理员可配置】\n${input.businessPrompt}`,
     `【回答规范｜管理员可配置】\n${input.responsePrompt}`,
     IMMUTABLE_SIGNAL_PROTOCOL,
+    IMMUTABLE_OPPORTUNITY_ADVISOR_PROTOCOL,
   ].join('\n\n')
 }

@@ -52,12 +52,13 @@ export type AgentStreamEvent =
   | { type: 'done'; sessionId: string; fallback?: boolean }
   | { type: 'error'; message: string }
 
-async function streamChat(
+async function streamFrom(
+  path: string,
   input: { message: string; sessionId?: string },
   onEvent: (event: AgentStreamEvent) => void,
   signal?: AbortSignal,
 ) {
-  const response = await fetch(buildApiUrl('/agent/chat/stream'), {
+  const response = await fetch(buildApiUrl(path), {
     method: 'POST', credentials: 'include', signal,
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify(input),
@@ -94,5 +95,8 @@ export const agentApi = {
     if (!response.ok) throw new ApiError('无法读取商机信号', response.status)
     return response.json() as Promise<AgentSignal[]>
   },
-  streamChat,
+  streamChat: (input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>
+    streamFrom('/agent/chat/stream', input, onEvent, signal),
+  streamOpportunityChat: (opportunityId: string, input: { message: string; sessionId?: string }, onEvent: (event: AgentStreamEvent) => void, signal?: AbortSignal) =>
+    streamFrom(`/agent/opportunities/${encodeURIComponent(opportunityId)}/chat/stream`, input, onEvent, signal),
 }

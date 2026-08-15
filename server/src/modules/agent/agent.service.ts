@@ -25,7 +25,16 @@ type SignalExtraction = {
 }
 
 type HarnessRun = { sessionId: string; content: string; finishReason?: string }
-const SIGNAL_PROCESSING_VERSION = 3
+const SIGNAL_PROCESSING_VERSION = 4
+
+function extractionForStorage(extraction: SignalExtraction): Prisma.InputJsonValue {
+  return {
+    ...extraction,
+    contactPhone: extraction.contactPhone
+      ? extraction.contactPhone.replace(/(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)/g, '$1****$3')
+      : null,
+  } as unknown as Prisma.InputJsonValue
+}
 
 const STAGE_RANK: Record<OpportunityStage, number> = {
   reporting: 0, contacting: 1, proposal: 2, negotiation: 3, signing: 3,
@@ -222,7 +231,7 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
         title: opportunity?.customerName ?? message.chatName,
         summary: extraction.summary,
         confidence: extraction.confidence,
-        extractedData: extraction as unknown as Prisma.InputJsonValue,
+        extractedData: extractionForStorage(extraction),
         processingSource: source,
         processingVersion: SIGNAL_PROCESSING_VERSION,
         opportunityUpdated: shouldUpdate && hasPotentialUpdate,
@@ -231,7 +240,7 @@ export async function processFeishuMessageSignal(messageId: string): Promise<voi
       update: {
         opportunityId: opportunity?.id, signalType: extraction.signalType,
         title: opportunity?.customerName ?? message.chatName, summary: extraction.summary,
-        confidence: extraction.confidence, extractedData: extraction as unknown as Prisma.InputJsonValue,
+        confidence: extraction.confidence, extractedData: extractionForStorage(extraction),
         processingSource: source, processingVersion: SIGNAL_PROCESSING_VERSION,
         opportunityUpdated: shouldUpdate && hasPotentialUpdate,
       },
