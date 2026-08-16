@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, formatSignedAmount, isAdminRole } from '../utils'
-import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Eye, CircleHelp, LoaderCircle, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, Lock, FileText, Send, Shield, ImageIcon, Upload, X, Unlock, Snowflake, XCircle, Sparkles, Users, Phone, Mail, MessageCircle, Eye, CircleHelp, LoaderCircle, Plus, Trash2, Target, TrendingUp, AlertTriangle, ListChecks, CheckCircle2, Clock3 } from 'lucide-react'
 import type { ProgressStatus } from '../types'
 import { useMobile } from '../hooks/useMobile'
 import { opportunityApi, agentApi, ApiError } from '../api'
@@ -35,6 +35,8 @@ type GroupBinding = { manualId?: string; channel: InspectionChannel; sourceGroup
 type GroupDraft = GroupBinding & { secret: string }
 type GroupInspectionConfig = { enabled: boolean; mode: 'automatic' | 'hybrid'; frequency: string; range: string; output: string; signalCount: number; latestSignalAt: string | null; groups: GroupBinding[] }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text: string }
+type AdvisorFact = { label: string; text: string; tone?: 'positive' | 'warning' | 'danger' | 'neutral' }
+type AdvisorAction = { title: string; detail: string; owner: string; timing: string }
 
 const inspectionChannelLabels: Record<InspectionChannel, string> = { feishu: '飞书', wecom: '企微', dingtalk: '钉钉', jingme: '京 ME' }
 
@@ -67,6 +69,12 @@ function keyProgressCategory(text: string, signalType?: string) {
 
 function cleanProgressSummary(text: string) {
   return text.replace(/^【[^】]+】/, '').replace(/\s+/g, ' ').trim().replace(/[；;。]+$/, '')
+}
+
+function conciseAdvisorText(text: string, limit = 58) {
+  const value = cleanProgressSummary(text)
+  const chars = Array.from(value)
+  return chars.length > limit ? `${chars.slice(0, limit).join('')}…` : value
 }
 
 export default function OpportunityDetail() {
@@ -408,27 +416,46 @@ export default function OpportunityDetail() {
   const latestActivityAt = [opp.updatedAt, ...progressReports.map(item => item.lastContactDate || item.createdAt), ...salesSignals.map(item => item.occurredAt)]
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0]
   const inactiveDays = Math.max(0, Math.floor((Date.now() - new Date(latestActivityAt).getTime()) / 86_400_000))
-  const advisorInterpretation = latestKeyProgress
-    ? `${opp.customerName}处于${stageName(opp.stage)}阶段。最新关键进展为“${latestKeyProgress.body}”，已结合最新字段重新评估，健康度 ${healthScore} 分。`
-    : `${opp.customerName}处于${stageName(opp.stage)}阶段，当前缺少可确认的关键推进结论，健康度 ${healthScore} 分。`
-  const advisorWins = [
-    demandDescription ? `需求场景已明确：${demandDescriptionDisplay}` : '需求场景仍待补充，暂无法确认核心赢单点。',
-    productInterests.length ? `${productInterests.join('、')}已进入客户产品兴趣范围。` : '产品兴趣尚未确认。',
-    keyProgressTimelineItems.some(item => /方案确认|报价谈判|签约推进|交付进展/.test(item.title)) ? '已有方案、商务或交付层面的实质推进证据。' : '暂未识别到方案或商务确认类证据。',
-  ].slice(0, 3)
-  const advisorRisks = [
-    riskText,
-    inactiveDays >= 7 ? `最近 ${inactiveDays} 天没有新的有效活动，需要确认商机是否停滞。` : `最近一次有效活动在 ${formatDate(latestActivityAt)}，当前跟进节奏正常。`,
-    keyProgressTimelineItems.some(item => item.type === 'risk') ? '实时信号中存在风险变化，需优先明确责任人和处理时限。' : null,
-  ].filter((item): item is string => Boolean(item))
-  const advisorActions = [
-    latestKeyProgress?.title.includes('方案确认') ? '围绕客户最新反馈确认方案修改项、负责人和确认时间。'
-      : latestKeyProgress?.title.includes('报价谈判') ? '确认报价决策人、异议项和下一次商务确认时间。'
-      : latestKeyProgress?.title.includes('签约推进') ? '明确合同当前节点、双方责任人和预计完成时间。'
-      : latestKeyProgress?.title.includes('交付进展') ? '同步交付里程碑、当前阻塞和下一验收节点。'
-      : nextAction,
-    groupConfig.groups.length ? '持续由商机群巡检捕获新结论，并在出现变化时复核本建议。' : '确认正确的客户群或项目群，补充人工群配置以提高信号匹配准确率。',
-  ]
+  const latestProgressReport = [...progressReports].sort((left, right) => new Date(right.lastContactDate || right.createdAt).getTime() - new Date(left.lastContactDate || left.createdAt).getTime())[0]
+  const explicitRisk = keyProgressTimelineItems.find(item => item.type === 'risk')
+  const commercialProgress = keyProgressTimelineItems.find(item => /方案确认|报价谈判|签约推进|交付进展/.test(item.title))
+  const advisorInterpretation = {
+    headline: latestKeyProgress
+      ? `已进入${stageName(opp.stage)}，最新变化是${conciseAdvisorText(latestKeyProgress.body, 48)}`
+      : `处于${stageName(opp.stage)}，但尚缺少可验证的关键推进`,
+    focus: explicitRisk
+      ? '先处理风险，再确认下一节点'
+      : ['negotiation', 'signing'].includes(opp.stage) ? '聚焦决策与签约条件'
+      : opp.stage === 'signed' ? '锁定交付启动与里程碑'
+      : opp.stage === 'delivery' ? '聚焦验收与交付闭环'
+      : '推动客户确认下一阶段输入',
+  }
+  const advisorWins = ([
+    commercialProgress ? { label: '实质进展', text: conciseAdvisorText(commercialProgress.body), tone: 'positive' as const } : null,
+    demandDescription ? { label: '需求基础', text: conciseAdvisorText(demandDescriptionDisplay), tone: 'positive' as const } : null,
+    opp.signedDate ? { label: '签约确认', text: `${formatDate(opp.signedDate)} 已确认签约${typeof opp.signedAmount === 'number' ? `，金额 ${formatSignedAmount(opp.signedAmount)} 万元` : ''}`, tone: 'positive' as const } : null,
+    evidenceFiles.length ? { label: '材料支撑', text: `已沉淀 ${evidenceFiles.length} 份商机材料，可用于复核客户进展`, tone: 'neutral' as const } : null,
+    contact.department && contact.department !== '—' ? { label: '关系基础', text: `已识别${contact.department}${contact.level ? ` · ${contact.level}` : ''}联系人`, tone: 'neutral' as const } : null,
+  ] as Array<AdvisorFact | null>).filter(Boolean).slice(0, 3) as AdvisorFact[]
+  if (!advisorWins.length) advisorWins.push({ label: '待验证', text: '尚无足够事实支撑赢单判断，需先补齐需求或客户确认', tone: 'warning' })
+  const advisorRisks = ([
+    latestProgressReport?.status === 'blocked' || latestProgressReport?.needsSupport ? { label: '需协同', text: conciseAdvisorText(latestProgressReport.description || '存在待处理阻塞事项'), tone: 'danger' as const } : null,
+    explicitRisk ? { label: '风险信号', text: conciseAdvisorText(explicitRisk.body), tone: 'danger' as const } : null,
+    !opp.lockedPermanently && days <= 7 ? { label: '保护期', text: days <= 0 ? '保护已到期，需立即确认续期或释放' : `仅剩 ${days} 天，需在到期前补充有效进展`, tone: days <= 2 ? 'danger' as const : 'warning' as const } : null,
+    inactiveDays >= 7 ? { label: '跟进停滞', text: `${inactiveDays} 天无有效活动，当前阶段可能已失真`, tone: inactiveDays >= 14 ? 'danger' as const : 'warning' as const } : null,
+    !demandDescription ? { label: '信息缺口', text: '核心需求尚未结构化，方案与赢单判断依据不足', tone: 'warning' as const } : null,
+  ] as Array<AdvisorFact | null>).filter(Boolean).slice(0, 3) as AdvisorFact[]
+  if (!advisorRisks.length) advisorRisks.push({ label: '暂无高风险', text: `最近活动更新于 ${formatDate(latestActivityAt)}，当前未发现明确阻塞`, tone: 'positive' })
+  const primaryAction: AdvisorAction = latestKeyProgress?.title.includes('方案确认') ? { title: '收敛方案修改项', detail: '让客户确认修改范围、验收口径与最终版本', owner: opp.salesOwnerName, timing: '48 小时内' }
+    : latestKeyProgress?.title.includes('报价谈判') ? { title: '锁定商务决策条件', detail: '确认决策人、价格异议与下一次商务确认节点', owner: opp.salesOwnerName, timing: '48 小时内' }
+    : latestKeyProgress?.title.includes('签约推进') ? { title: '核实合同当前节点', detail: '明确卡点、双方责任人与预计完成时间', owner: opp.salesOwnerName, timing: '今天' }
+    : latestKeyProgress?.title.includes('交付进展') ? { title: '确认下一验收节点', detail: '同步交付里程碑、阻塞项与验收负责人', owner: opp.salesOwnerName, timing: '今天' }
+    : { title: '推动下一阶段确认', detail: nextAction, owner: opp.salesOwnerName, timing: '本周' }
+  const advisorActions = ([
+    primaryAction,
+    explicitRisk || latestProgressReport?.needsSupport ? { title: '关闭最高优先级风险', detail: conciseAdvisorText(explicitRisk?.body || latestProgressReport?.description || '明确阻塞事项和解决路径'), owner: latestProgressReport?.needsSupport ? '销售负责人 + 支持团队' : opp.salesOwnerName, timing: '今天' } : null,
+    !groupConfig.groups.length ? { title: '补齐信号来源', detail: '确认对应客户群或项目群，提升后续进展识别准确率', owner: opp.salesOwnerName, timing: '本周' } : null,
+  ] as Array<AdvisorAction | null>).filter(Boolean).slice(0, 3) as AdvisorAction[]
   const salesTimelineItems = [...signedTimelineItem, ...manualProgressTimelineItems, ...keyProgressTimelineItems, ...(!signedTimelineItem.length && !manualProgressTimelineItems.length && !keyProgressTimelineItems.length ? [{ id: 'stage-update', at: opp.updatedAt, title: '商机进度更新', body: `销售已将商机推进至「${stageName(opp.stage)}」，建议下一步：${nextAction}。`, type: 'manual', label: '销售更新' }] : [])]
   const timelineItems = [
     ...salesTimelineItems,
@@ -607,10 +634,24 @@ export default function OpportunityDetail() {
 
           <article className="sx-panel sx-ai-panel">
             <header className="sx-panel-head"><div><span>OPPORTUNITY X-RAY</span><h2>Scale X 商机参谋</h2></div><Sparkles size={18} /></header>
-            <section className="hero"><h3>商机解读</h3><p>{advisorInterpretation}</p></section>
-            <section><h3>赢单机会</h3><ul>{advisorWins.map(item => <li key={item}>{item}</li>)}</ul></section>
-            <section className="risk"><h3>风险提醒</h3><ul>{advisorRisks.map(item => <li key={item}>{item}</li>)}</ul></section>
-            <section><h3>下一步行动</h3><ul>{advisorActions.map(item => <li key={item}>{item}</li>)}</ul></section>
+            <section className="hero sx-advisor-insight">
+              <header><span><Target size={14} />商机解读</span><em className={`health ${healthTone}`}>{healthScore} 分</em></header>
+              <strong>{advisorInterpretation.headline}</strong>
+              <div className="sx-advisor-snapshot"><span>{stageName(opp.stage)}</span><span>{intentLevel}</span><span><Clock3 size={10} />{formatDate(latestActivityAt)} 更新</span></div>
+              <p><b>当前重点</b>{advisorInterpretation.focus}</p>
+            </section>
+            <section className="sx-advisor-insight">
+              <header><span><TrendingUp size={14} />赢单机会</span><em>{advisorWins.length} 项有效依据</em></header>
+              <div className="sx-advisor-facts">{advisorWins.map(item => <div key={`${item.label}-${item.text}`} className={item.tone}><i><CheckCircle2 size={12} /></i><p><b>{item.label}</b><span>{item.text}</span></p></div>)}</div>
+            </section>
+            <section className="risk sx-advisor-insight">
+              <header><span><AlertTriangle size={14} />风险提醒</span><em className={advisorRisks.some(item => item.tone === 'danger') ? 'danger' : ''}>{advisorRisks.some(item => item.tone === 'danger') ? '优先处理' : '持续观察'}</em></header>
+              <div className="sx-advisor-facts">{advisorRisks.map(item => <div key={`${item.label}-${item.text}`} className={item.tone}><i><AlertTriangle size={12} /></i><p><b>{item.label}</b><span>{item.text}</span></p></div>)}</div>
+            </section>
+            <section className="sx-advisor-insight">
+              <header><span><ListChecks size={14} />下一步行动</span><em>按优先级执行</em></header>
+              <div className="sx-advisor-actions">{advisorActions.map((item, index) => <div key={`${item.title}-${item.timing}`}><i>{index + 1}</i><p><b>{item.title}</b><span>{item.detail}</span><small><em>{item.owner}</em><em>{item.timing}</em></small></p></div>)}</div>
+            </section>
             <div className="sx-advisor-quick">
               {['分析当前商机', '下一步怎么推进', '生成客户沟通话术'].map(item => <button key={item} onClick={() => continueInSalesPartner(item)}>{item}</button>)}
             </div>
