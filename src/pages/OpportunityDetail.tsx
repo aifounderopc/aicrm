@@ -212,6 +212,11 @@ export default function OpportunityDetail() {
   }
 
   const days = daysUntil(opp.releaseAt)
+  const protectionReleased = opp.stage === 'released'
+  const protectionExpired = !opp.lockedPermanently && !protectionReleased && days <= 0
+  const protectionUrgent = !opp.lockedPermanently && !protectionReleased && days <= 7
+  const protectionColor = protectionReleased ? '#8b98a8' : protectionExpired || protectionUrgent ? '#d99212' : opp.lockedPermanently ? '#1657c8' : '#00a36c'
+  const protectionLabel = protectionReleased ? '已释放' : protectionExpired ? '保护已到期' : protectionUrgent ? '即将到期' : opp.lockedPermanently ? '永久锁定' : '保护中'
   const isAdmin = currentUser.role === 'admin'
   const _isChannel = currentUser.role === 'channel'; void _isChannel
   const canEdit = opp.salesOwnerId === currentUser.id || isAdmin
@@ -567,32 +572,39 @@ export default function OpportunityDetail() {
       )}
 
       <section className="sx-detail-summary">
-        <div className="sx-summary-main">
-          <div className="sx-account-copy">
-            <span className="sx-eyebrow">OPPORTUNITY PROFILE</span>
-            <h1>{opp.customerName}</h1>
-            <p>{opp.companyName || opp.customerName}</p>
-            <div className="sx-summary-tags">
-              <span style={{ background: sc.bg, color: sc.text }}>{stageName(opp.stage)}</span>
-              <span className="intent">{intentLevel}</span>
-              <span>{opp.industry}</span>
-              <span>{opp.source === 'channel' ? `渠道 · ${opp.channelName || '合作伙伴'}` : '直客商机'}</span>
-              <span className="complete">完整度 {completenessScore}%</span>
+        <div className="sx-summary-left">
+          <div className="sx-summary-main">
+            <div className="sx-account-copy">
+              <span className="sx-eyebrow">OPPORTUNITY PROFILE</span>
+              <h1>{opp.customerName}</h1>
+              <p>{opp.companyName || opp.customerName}</p>
+              <div className="sx-summary-tags">
+                <span style={{ background: sc.bg, color: sc.text }}>{stageName(opp.stage)}</span>
+                <span className="intent">{intentLevel}</span>
+                <span>{opp.industry}</span>
+                <span>{opp.source === 'channel' ? `渠道 · ${opp.channelName || '合作伙伴'}` : '直客商机'}</span>
+                <span className="complete">完整度 {completenessScore}%</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="sx-health-block">
-          <div className={`sx-health-ring ${healthTone}`} style={{ '--score': `${healthScore * 3.6}deg` } as React.CSSProperties}>
-            <strong>{healthScore}</strong>
+          <div className="sx-stage-bar" style={{ gridTemplateColumns: `repeat(${displayPipeline.length}, minmax(0, 1fr))` }}>
+            {displayPipeline.map((item, index) => {
+              const state = index < currentPipelineIdx ? 'done' : index === currentPipelineIdx ? 'active' : ''
+              const stageDate = item.key === 'reporting' ? opp.reportedAt : item.key === 'signed' && opp.signedDate ? opp.signedDate : state ? opp.updatedAt : ''
+              return <div key={item.key} className={state}><i /><b>{item.label}</b><em>{stageDate ? formatDate(stageDate) : '—'}</em></div>
+            })}
           </div>
-          <span>商机健康度 <button className="sx-health-help" aria-label="查看商机健康度评估规则" data-tooltip="综合评估商机阶段、销售推进活跃度、上下文与举证完整度、保护期状态；分数越高，表示商机推进越健康。"><CircleHelp size={13} /></button></span>
         </div>
-        <div className="sx-stage-bar" style={{ gridTemplateColumns: `repeat(${displayPipeline.length}, minmax(0, 1fr))` }}>
-          {displayPipeline.map((item, index) => {
-            const state = index < currentPipelineIdx ? 'done' : index === currentPipelineIdx ? 'active' : ''
-            const stageDate = item.key === 'reporting' ? opp.reportedAt : item.key === 'signed' && opp.signedDate ? opp.signedDate : state ? opp.updatedAt : ''
-            return <div key={item.key} className={state}><i /><b>{item.label}</b><em>{stageDate ? formatDate(stageDate) : '—'}</em></div>
-          })}
+        <div className="sx-summary-status">
+          <div className="sx-health-block">
+            <span>商机健康度 <button className="sx-health-help" aria-label="查看商机健康度评估规则" data-tooltip="综合评估商机阶段、销售推进活跃度、上下文与举证完整度、保护期状态；分数越高，表示商机推进越健康。"><CircleHelp size={13} /></button></span>
+            <div className={`sx-health-ring ${healthTone}`} style={{ '--score': `${healthScore * 3.6}deg` } as React.CSSProperties}><strong>{healthScore}</strong></div>
+            <b>{healthScore >= 80 ? '推进健康' : healthScore >= 65 ? '保持跟进' : '需要关注'}</b>
+          </div>
+          <div className="sx-summary-protection" style={{ '--protect': protectionColor } as React.CSSProperties}>
+            <header><span>商机保护状态</span>{canEdit && protectionUrgent && isOwner && !protectionReleased && <button onClick={() => { requestRenewal(opp.id); navigate('/opportunities') }}>申请续期</button>}</header>
+            <div><span className="sx-summary-protect-ring"><Donut pct={opp.lockedPermanently ? 1 : Math.max(0, Math.min(1, days / 30))} color={protectionColor} size={66} /><strong>{opp.lockedPermanently ? '∞' : protectionReleased || protectionExpired ? '—' : days}</strong>{!opp.lockedPermanently && !protectionReleased && !protectionExpired && <small>天</small>}</span><p><b>{protectionLabel}</b><span>{opp.lockedPermanently ? '永久保护，无需续期' : `保护到期 ${formatDate(opp.releaseAt)}`}</span><em>{protectionReleased ? '保护已终止' : protectionUrgent ? `仅剩 ${Math.max(days, 0)} 天` : '保护有效'}</em></p></div>
+          </div>
         </div>
       </section>
 
@@ -607,6 +619,10 @@ export default function OpportunityDetail() {
               <div className={`sx-field ${!contact.department ? 'warn' : ''}`}><label>需求部门</label><strong>{contact.department || '待补充'}</strong></div>
               <div className="sx-field"><label>商机类型</label><strong>{opp.source === 'channel' ? '渠道商机' : '直客商机'}</strong></div>
               <div className={`sx-field sx-contact-field ${!contact.encryptedName ? 'warn' : ''}`}><div><label>联系人 · {contact.level || '层级待补充'}</label><strong className="with-lock"><Lock size={12} />{contactName}{canViewContact && contact.encryptedName && !decryptedContact && <button className="sx-contact-eye" onClick={() => setShowContactConfirm(true)} disabled={contactLoading} aria-label="查看联系人" title="解密查看联系人"><Eye size={14} /></button>}</strong>{decryptedContact?.contact && <small className="sx-contact-value">{decryptedContact.contact}</small>}{contactError && <small className="sx-contact-error">{contactError}</small>}</div><span className="sx-contact-methods"><i className={contact.contactTypes.includes('wechat') ? 'active' : ''} title="微信"><MessageCircle size={15} /></i><i className={contact.contactTypes.includes('phone') ? 'active' : ''} title="手机号"><Phone size={15} /></i><i className={contact.contactTypes.includes('email') ? 'active' : ''} title="邮箱"><Mail size={15} /></i></span></div>
+              <div className="sx-field"><label>销售负责人</label><strong>{opp.salesOwnerName}</strong><small>商机当前归属人</small></div>
+              <div className="sx-field"><label>报备时间</label><strong>{formatDate(opp.reportedAt)}</strong><small>{opp.source === 'channel' ? '渠道报备' : '销售自报'}</small></div>
+              <div className="sx-field"><label>来源类型</label><strong>{opp.source === 'channel' ? '渠道伙伴' : '销售自报'}</strong><small>{opp.source === 'channel' ? opp.channelName || '渠道名称待补充' : '直客销售商机'}</small></div>
+              <div className="sx-field"><label>渠道信息</label><strong>{opp.source === 'channel' ? opp.channelName || '待补充' : '非渠道商机'}</strong><small>{opp.source === 'channel' ? `渠道经理：${opp.channelManagerName || '待补充'}` : '无需渠道协同'}</small></div>
               <div className={`sx-field wide sx-demand-field ${!demandDescription ? 'warn' : ''}`}><label>需求场景</label><strong>{demandDescriptionDisplay || '待补充，最多支持 120 字'}</strong></div>
             </div>
             {(opp.stage === 'signed' || opp.stage === 'delivery') && opp.signedDate && <div className="sx-signed-strip"><div><span>签约金额</span><strong>{typeof opp.signedAmount === 'number' ? formatSignedAmount(opp.signedAmount) : '—'}<small> 万元</small></strong></div><div><span>签约时间</span><strong>{formatDate(opp.signedDate)}</strong></div><div><span>合同编号</span><strong>{opp.contractNo || '待补充'}</strong></div><div><span>签约凭证</span>{opp.contractFileId ? <button className="sx-contract-proof" onClick={() => setPreviewEvidence({ url: opp.contractFileId!, name: opp.contractNo ? `${opp.contractNo} 签约凭证` : '签约凭证' })}><ImageIcon size={14} />查看图片</button> : <strong>未上传</strong>}</div></div>}
@@ -621,17 +637,6 @@ export default function OpportunityDetail() {
         </div>
 
         <aside className="sx-detail-side">
-          <article className="sx-panel sx-protection-panel">
-            <header className="sx-panel-head"><div><span>PROTECTION</span><h2>商机保护状态</h2></div>{canEdit && !opp.lockedPermanently && days <= 7 && isOwner && opp.stage !== 'released' && <button className="sx-renew" onClick={() => { requestRenewal(opp.id); navigate('/opportunities') }}>申请续期</button>}</header>
-            {(() => {
-              const released = opp.stage === 'released', expired = !opp.lockedPermanently && !released && days <= 0, urgent = !opp.lockedPermanently && !released && days <= 7
-              const color = released ? '#8b98a8' : expired || urgent ? '#d99212' : opp.lockedPermanently ? '#1657c8' : '#00a36c'
-              const label = released ? '已释放' : expired ? '保护已到期' : urgent ? '即将到期' : opp.lockedPermanently ? '永久锁定' : '保护中'
-              return <div className="sx-protection-card" style={{ '--protect': color } as React.CSSProperties}><div className="sx-protect-ring"><Donut pct={opp.lockedPermanently ? 1 : Math.max(0, Math.min(1, days / 30))} color={color} size={88} /><span><strong>{opp.lockedPermanently ? '∞' : released || expired ? '—' : days}</strong>{!opp.lockedPermanently && !released && !expired && <small>天</small>}</span></div><div><h3>{label}</h3><p>{opp.lockedPermanently ? '永久保护，无需续期' : `保护到期 ${formatDate(opp.releaseAt)}`}</p><b>{released ? '保护已终止' : urgent ? `仅剩 ${Math.max(days, 0)} 天` : '保护有效'}</b></div></div>
-            })()}
-            <div className="sx-protection-meta"><div><span>销售负责人</span><strong>{opp.salesOwnerName}</strong></div><div><span>报备时间</span><strong>{formatDate(opp.reportedAt)}</strong></div><div><span>来源类型</span><strong>{opp.source === 'channel' ? '渠道伙伴' : '销售自报'}</strong></div><div><span>渠道经理</span><strong>{opp.channelManagerName || '—'}</strong></div></div>
-          </article>
-
           <article className="sx-panel sx-ai-panel">
             <header className="sx-panel-head"><div><span>OPPORTUNITY X-RAY</span><h2>Scale X 商机参谋</h2></div><Sparkles size={18} /></header>
             <section className="hero sx-advisor-insight">
@@ -666,7 +671,7 @@ export default function OpportunityDetail() {
               <textarea value={advisorInput} onChange={event => setAdvisorInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void askAdvisor() } }} placeholder={`询问 ${opp.customerName} 的风险、策略或推进话术…`} rows={2} disabled={advisorResponding} />
               <button type="submit" disabled={!advisorInput.trim() || advisorResponding} aria-label="发送给商机参谋">{advisorResponding ? <LoaderCircle size={15} className="spin" /> : <Send size={15} />}</button>
             </form>
-            <footer>Scale X 仅基于你有权访问的 CRM 与连接器数据提供分析</footer>
+            <footer>Scale X 仅基于你有权访问的商机与连接器数据提供分析</footer>
           </article>
         </aside>
       </section>
