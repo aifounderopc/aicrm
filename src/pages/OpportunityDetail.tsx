@@ -602,8 +602,10 @@ export default function OpportunityDetail() {
             <b>{healthScore >= 80 ? '推进健康' : healthScore >= 65 ? '保持跟进' : '需要关注'}</b>
           </div>
           <div className="sx-summary-protection" style={{ '--protect': protectionColor } as React.CSSProperties}>
-            <header><span>商机保护状态</span>{canEdit && protectionUrgent && isOwner && !protectionReleased && <button onClick={() => { requestRenewal(opp.id); navigate('/opportunities') }}>申请续期</button>}</header>
-            <div><span className="sx-summary-protect-ring"><Donut pct={opp.lockedPermanently ? 1 : Math.max(0, Math.min(1, days / 30))} color={protectionColor} size={66} /><strong>{opp.lockedPermanently ? '∞' : protectionReleased || protectionExpired ? '—' : days}</strong>{!opp.lockedPermanently && !protectionReleased && !protectionExpired && <small>天</small>}</span><p><b>{protectionLabel}</b><span>{opp.lockedPermanently ? '永久保护，无需续期' : `保护到期 ${formatDate(opp.releaseAt)}`}</span><em>{protectionReleased ? '保护已终止' : protectionUrgent ? `仅剩 ${Math.max(days, 0)} 天` : '保护有效'}</em></p></div>
+            <header><span>商机保护状态</span></header>
+            <span className="sx-summary-protect-ring"><Donut pct={opp.lockedPermanently ? 1 : Math.max(0, Math.min(1, days / 30))} color={protectionColor} size={88} /><strong>{opp.lockedPermanently ? '∞' : protectionReleased || protectionExpired ? '—' : days}</strong>{!opp.lockedPermanently && !protectionReleased && !protectionExpired && <small>天</small>}</span>
+            <p><b>{protectionLabel}</b><span>{opp.lockedPermanently ? '永久保护，无需续期' : `到期时间 ${formatDate(opp.releaseAt)}`}</span></p>
+            {canEdit && protectionUrgent && isOwner && !protectionReleased && <button onClick={() => { requestRenewal(opp.id); navigate('/opportunities') }}>申请续期</button>}
           </div>
         </div>
       </section>
