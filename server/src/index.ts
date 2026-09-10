@@ -17,6 +17,7 @@ import { agentRouter } from './modules/agent/agent.routes.js'
 import { scheduleSignalProcessing } from './modules/agent/agent.service.js'
 import { persistEnvironmentAgentConfig } from './modules/agent/agent.config.js'
 import { scheduleAutoRelease } from './jobs/autoRelease.js'
+import { tenantRouter } from './modules/tenants/tenants.routes.js'
 
 const app = express()
 
@@ -36,6 +37,7 @@ app.use('/api/notifications', notificationRouter)
 app.use('/api/logs', logRouter)
 app.use('/api/integrations', integrationRouter)
 app.use('/api/agent', agentRouter)
+app.use('/api/tenants', tenantRouter)
 
 app.use(errorHandler)
 

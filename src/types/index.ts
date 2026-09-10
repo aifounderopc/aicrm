@@ -12,6 +12,9 @@ export interface User {
   createdAt?: string
   disabled?: boolean
   isJdManager?: boolean // 京东渠道经理账号（与渠道伙伴账号区分，同样关联 channelId）
+  tenantId?: string
+  tenantName?: string
+  isPlatformAdmin?: boolean
 }
 
 export type OpportunityStage =

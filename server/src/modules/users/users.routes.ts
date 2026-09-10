@@ -11,8 +11,8 @@ import { writeLog } from '../../util/audit.js'
 export const userRouter = Router()
 userRouter.use(requireAuth)
 
-const pub = (u: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; disabled: boolean; groupName: string | null; createdAt: Date }) =>
-  ({ id: u.id, name: u.name, email: u.email, role: u.role, channelId: u.channelId, isJdManager: u.isJdManager, disabled: u.disabled, group: u.groupName, createdAt: u.createdAt })
+const pub = (u: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; disabled: boolean; groupName: string | null; createdAt: Date; tenantId: string; isPlatformAdmin: boolean }) =>
+  ({ id: u.id, name: u.name, email: u.email, role: u.role, channelId: u.channelId, isJdManager: u.isJdManager, disabled: u.disabled, group: u.groupName, createdAt: u.createdAt, tenantId: u.tenantId, isPlatformAdmin: u.isPlatformAdmin })
 
 // 创建者能否创建该角色：超管不限；sales_admin 仅 sales；channel_admin 仅 channel
 function canCreate(actorRole: string, targetRole: string): boolean {
@@ -27,13 +27,13 @@ userRouter.get('/', ah(async (req, res) => {
   const auth = req.auth!
   if (!isAdminRole(auth.authRole)) throw new ApiError(403, '无权限')
   const role = req.query.role as string | undefined
-  const users = await prisma.user.findMany({ where: role ? { role: role as never } : {}, orderBy: { createdAt: 'desc' } })
+  const users = await prisma.user.findMany({ where: { tenantId: auth.user.tenantId, ...(role ? { role: role as never } : {}) }, orderBy: { createdAt: 'desc' } })
 
   if (req.query.withStats === 'true' && role === 'sales') {
     const withStats = await Promise.all(users.map(async (u) => {
       const [total, signed] = await Promise.all([
-        prisma.opportunity.count({ where: { salesOwnerId: u.id } }),
-        prisma.opportunity.count({ where: { salesOwnerId: u.id, stage: 'signed' } }),
+        prisma.opportunity.count({ where: { tenantId: auth.user.tenantId, salesOwnerId: u.id } }),
+        prisma.opportunity.count({ where: { tenantId: auth.user.tenantId, salesOwnerId: u.id, stage: 'signed' } }),
       ])
       return { ...pub(u), total, signed, rate: total ? Math.round(signed / total * 100) : 0 }
     }))
@@ -58,7 +58,7 @@ userRouter.post('/', ah(async (req, res) => {
   if (!pv.valid) throw new ApiError(400, pv.error!)
   if (await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } })) throw new ApiError(409, '该邮箱已被使用')
 
-  const u = await prisma.user.create({ data: { name: input.name, email: input.email.toLowerCase(), passwordHash: await hashPassword(input.password), role: input.role, groupName: input.group, mustChangePwd: true } })
+  const u = await prisma.user.create({ data: { tenantId: auth.user.tenantId, name: input.name, email: input.email.toLowerCase(), passwordHash: await hashPassword(input.password), role: input.role, groupName: input.group, mustChangePwd: true } })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '新增账号', detail: `${input.role}：${input.name}（${input.email}）`, targetType: 'user', targetId: u.id })
   res.status(201).json(pub(u))
 }))
@@ -68,6 +68,8 @@ const updateSchema = z.object({ name: z.string().optional(), email: z.string().e
 userRouter.patch('/:id', ah(async (req, res) => {
   const auth = req.auth!
   if (!isAdminRole(auth.authRole)) throw new ApiError(403, '无权限')
+  const target = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
+  if (!target) throw new ApiError(404, '账号不存在')
   const updates = updateSchema.parse(req.body)
   const data: Record<string, unknown> = {}
   if (updates.name) data.name = updates.name
@@ -82,7 +84,7 @@ userRouter.patch('/:id', ah(async (req, res) => {
     if (!pv.valid) throw new ApiError(400, pv.error!)
     data.passwordHash = await hashPassword(updates.password)
   }
-  const u = await prisma.user.update({ where: { id: req.params.id }, data })
+  const u = await prisma.user.update({ where: { id: target.id }, data })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '编辑账号', detail: `${u.name}（${u.email}）`, targetType: 'user', targetId: u.id })
   res.json(pub(u))
 }))
@@ -91,7 +93,7 @@ userRouter.patch('/:id', ah(async (req, res) => {
 userRouter.post('/:id/toggle', ah(async (req, res) => {
   const auth = req.auth!
   if (!isAdminRole(auth.authRole)) throw new ApiError(403, '无权限')
-  const u = await prisma.user.findUnique({ where: { id: req.params.id } })
+  const u = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
   if (!u) throw new ApiError(404, '账号不存在')
   const updated = await prisma.user.update({ where: { id: u.id }, data: { disabled: !u.disabled } })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: updated.disabled ? '停用账号' : '启用账号', detail: `${u.email}`, targetType: 'user', targetId: u.id })
@@ -102,9 +104,11 @@ userRouter.post('/:id/toggle', ah(async (req, res) => {
 userRouter.delete('/:id', ah(async (req, res) => {
   const auth = req.auth!
   if (!isAdminRole(auth.authRole)) throw new ApiError(403, '无权限')
-  const hasData = await prisma.opportunity.count({ where: { salesOwnerId: req.params.id } })
+  const target = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
+  if (!target) throw new ApiError(404, '账号不存在')
+  const hasData = await prisma.opportunity.count({ where: { tenantId: auth.user.tenantId, salesOwnerId: req.params.id } })
   if (hasData) throw new ApiError(409, '该账号名下已有商机数据，无法删除')
-  await prisma.user.delete({ where: { id: req.params.id } })
+  await prisma.user.delete({ where: { id: target.id } })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '删除账号', detail: `账号 ID：${req.params.id}`, targetType: 'user', targetId: req.params.id })
   res.status(204).end()
 }))

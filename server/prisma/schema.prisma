@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -50,12 +50,37 @@ enum RenewalStatus {
   rejected
 }
 
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  status    String   @default("active")
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users                    User[]
+  channels                 Channel[]
+  opportunities            Opportunity[]
+  inspectionBindings       OpportunityInspectionBinding[]
+  integrationConnections   IntegrationConnection[]
+  feishuMessages           FeishuMessage[]
+  operationLogs            OperationLog[]
+  agentConfiguration       AgentConfiguration?
+  agentModelConfigurations AgentModelConfiguration[]
+
+  @@map("tenants")
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String
   email         String    @unique
   passwordHash  String    @map("password_hash")
   role          UserRole
+  tenantId      String    @default("tenant_joymarketing") @map("tenant_id")
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  isPlatformAdmin Boolean @default(false) @map("is_platform_admin")
   channelId     String?   @map("channel_id")
   channel       Channel?  @relation(fields: [channelId], references: [id])
   isJdManager   Boolean   @default(false) @map("is_jd_manager")
@@ -70,6 +95,7 @@ model User {
   logs               OperationLog[]
 
   @@index([role])
+  @@index([tenantId])
   @@index([channelId])
   @@map("users")
 }
@@ -82,21 +108,26 @@ model Channel {
   phone         String?
   jdManagerName String?       @map("jd_manager_name")
   status        ChannelStatus @default(active)
+  tenantId      String        @default("tenant_joymarketing") @map("tenant_id")
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
   createdAt     DateTime      @default(now()) @map("created_at")
 
   users         User[]
   opportunities Opportunity[]
 
+  @@index([tenantId])
   @@map("channels")
 }
 
 model Opportunity {
   id                     String           @id @default(cuid())
   customerName           String           @map("customer_name")
+  tenantId              String           @default("tenant_joymarketing") @map("tenant_id")
+  tenant                Tenant           @relation(fields: [tenantId], references: [id])
   customerNameNorm       String           @map("customer_name_norm") // 撞单归一化名
   companyName            String?          @map("company_name")
   industry               String
-  productInterests       String[]         @default(["JM 声访"]) @map("product_interests")
+  productInterests       Json             @map("product_interests")
   source                 CustomerSource
   channelId              String?          @map("channel_id")
   channel                Channel?         @relation(fields: [channelId], references: [id])
@@ -114,12 +145,12 @@ model Opportunity {
   lockedPermanently      Boolean          @default(false) @map("locked_permanently")
   amountRange            String           @map("amount_range") // under5/5to10/10to20/20to50/above50
   firstContactDate       DateTime?        @map("first_contact_date")
-  requirementDescription String           @map("requirement_description")
+  requirementDescription String           @db.Text @map("requirement_description")
 
   contractNo      String?   @map("contract_no")
   signedDate      DateTime? @map("signed_date")
   signedAmount    Float?    @map("signed_amount")
-  contractFileKey String?   @map("contract_file_key")
+  contractFileKey String?   @db.LongText @map("contract_file_key")
 
   isFrozen      Boolean   @default(false) @map("is_frozen")
   frozenReason  String?   @map("frozen_reason")
@@ -140,6 +171,7 @@ model Opportunity {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([customerNameNorm, industry])
+  @@index([tenantId])
   @@index([salesOwnerId])
   @@index([stage])
   @@index([releaseAt])
@@ -150,6 +182,8 @@ model OpportunityInspectionBinding {
   id              String      @id @default(cuid())
   opportunityId   String      @map("opportunity_id")
   opportunity     Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  tenantId         String      @default("tenant_joymarketing") @map("tenant_id")
+  tenant           Tenant      @relation(fields: [tenantId], references: [id])
   channel         String
   sourceGroupId   String?     @map("source_group_id")
   groupId         String      @map("group_id")
@@ -160,7 +194,8 @@ model OpportunityInspectionBinding {
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 
-  @@unique([channel, groupId])
+  @@unique([tenantId, channel, groupId])
+  @@index([tenantId])
   @@index([opportunityId])
   @@map("opportunity_inspection_bindings")
 }
@@ -171,9 +206,9 @@ model OpportunityContact {
   opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   level         String
   department    String
-  contactTypes  String[]    @map("contact_types")
-  encName       String?     @map("enc_name")    // 密文（base64）
-  encContact    String?     @map("enc_contact") // 密文（base64）
+  contactTypes  Json        @map("contact_types")
+  encName       String?     @db.Text @map("enc_name")    // 密文（base64）
+  encContact    String?     @db.Text @map("enc_contact") // 密文（base64）
   phoneHash     String?     @map("phone_hash")  // SHA-256，用于查重
 
   @@map("opportunity_contacts")
@@ -184,7 +219,7 @@ model EvidenceFile {
   opportunityId String         @map("opportunity_id")
   opportunity   Opportunity    @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   name          String
-  ossKey        String         @map("oss_key")
+  ossKey        String         @db.LongText @map("oss_key")
   size          Int
   status        EvidenceStatus @default(pending)
   rejectReason  String?        @map("reject_reason")
@@ -201,7 +236,7 @@ model ProgressReport {
   reporterId        String      @map("reporter_id")
   status            String
   lastContactDate   DateTime    @map("last_contact_date")
-  description       String
+  description       String      @db.Text
   estimatedSignDate DateTime?   @map("estimated_sign_date")
   needsSupport      Boolean     @default(false) @map("needs_support")
   createdAt         DateTime    @default(now()) @map("created_at")
@@ -229,7 +264,7 @@ model Notification {
   userId        String   @map("user_id")
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title         String
-  body          String
+  body          String   @db.Text
   type          String   // info | warning | success | error
   read          Boolean  @default(false)
   opportunityId String?  @map("opportunity_id")
@@ -244,9 +279,11 @@ model OperationLog {
   id         String   @id @default(cuid())
   actorId    String   @map("actor_id")
   actor      User     @relation(fields: [actorId], references: [id])
+  tenantId   String   @default("tenant_joymarketing") @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
   actorName  String   @map("actor_name")
   action     String
-  detail     String
+  detail     String   @db.Text
   targetType String?  @map("target_type")
   targetId   String?  @map("target_id")
   ip         String
@@ -254,6 +291,7 @@ model OperationLog {
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([actorId])
+  @@index([tenantId])
   @@index([action])
   @@map("operation_logs")
 }
@@ -261,9 +299,11 @@ model OperationLog {
 // 外部连接器凭证。密钥只保存 AES-256-GCM 密文，API 永不回传明文。
 model IntegrationConnection {
   id                 String   @id @default(cuid())
-  provider           String   @unique
+  provider           String
+  tenantId           String   @default("tenant_joymarketing") @map("tenant_id")
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
   appId              String   @map("app_id")
-  encryptedAppSecret String   @map("encrypted_app_secret")
+  encryptedAppSecret String   @db.Text @map("encrypted_app_secret")
   status             String   @default("disconnected")
   lastError          String?  @map("last_error")
   lastConnectedAt    DateTime? @map("last_connected_at")
@@ -271,24 +311,29 @@ model IntegrationConnection {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
+  @@unique([tenantId, provider])
+  @@index([tenantId])
   @@map("integration_connections")
 }
 
 // 飞书长连接接收到的群消息，message_id 作为幂等键避免重试重复入库。
 model FeishuMessage {
   id          String   @id
+  tenantId    String   @default("tenant_joymarketing") @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
   chatId      String   @map("chat_id")
   chatName    String   @map("chat_name")
   senderId    String   @map("sender_id")
   senderName  String   @map("sender_name")
   messageType String   @map("message_type")
-  contentRaw  String   @map("content_raw")
-  contentText String   @map("content_text")
+  contentRaw  String   @db.LongText @map("content_raw")
+  contentText String   @db.LongText @map("content_text")
   createdAt   DateTime @map("created_at")
   receivedAt  DateTime @default(now()) @map("received_at")
   salesSignal SalesSignal?
 
   @@index([createdAt])
+  @@index([tenantId])
   @@index([chatId])
   @@map("feishu_messages")
 }
@@ -303,7 +348,7 @@ model SalesSignal {
   opportunity        Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
   signalType         String        @map("signal_type")
   title              String
-  summary            String
+  summary            String        @db.Text
   confidence         Float         @default(0)
   extractedData      Json          @map("extracted_data")
   processingSource   String        @default("rules") @map("processing_source")
@@ -319,11 +364,13 @@ model SalesSignal {
 
 // AI 销售伙伴可开放配置。安全守卫和结构化协议由服务端内置，不允许后台覆盖。
 model AgentConfiguration {
-  id              String   @id @default("default")
+  id              String   @id @default(cuid())
+  tenantId        String   @unique @default("tenant_joymarketing") @map("tenant_id")
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
   provider        String   @default("deepseek-harness")
   model           String
   baseUrl         String   @map("base_url")
-  encryptedApiKey String   @map("encrypted_api_key")
+  encryptedApiKey String   @db.Text @map("encrypted_api_key")
   soulPrompt      String   @db.Text @map("soul_prompt")
   businessPrompt  String   @db.Text @map("business_prompt")
   responsePrompt  String   @db.Text @map("response_prompt")
@@ -337,9 +384,11 @@ model AgentConfiguration {
 model AgentModelConfiguration {
   id              String   @id @default(cuid())
   name            String
+  tenantId        String   @default("tenant_joymarketing") @map("tenant_id")
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
   model           String
   baseUrl         String   @map("base_url")
-  encryptedApiKey String   @map("encrypted_api_key")
+  encryptedApiKey String   @db.Text @map("encrypted_api_key")
   enabled         Boolean  @default(true)
   isDefault       Boolean  @default(false) @map("is_default")
   priority        Int      @default(0)
@@ -351,5 +400,6 @@ model AgentModelConfiguration {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@index([enabled, isDefault, priority])
+  @@index([tenantId])
   @@map("agent_model_configurations")
 }

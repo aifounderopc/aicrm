@@ -2,6 +2,7 @@
 // 运行：npm run seed
 import { OpportunityStage, PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { DEFAULT_TENANT_ID, DEFAULT_TENANT_NAME } from '../src/tenant.js'
 
 const prisma = new PrismaClient()
 const hash = (p: string) => bcrypt.hash(p, 12)
@@ -12,6 +13,11 @@ const seedPassword = (name: string) => {
 }
 
 async function main() {
+  await prisma.tenant.upsert({
+    where: { id: DEFAULT_TENANT_ID },
+    update: { name: DEFAULT_TENANT_NAME, code: 'joymarketing', status: 'active', isDefault: true },
+    create: { id: DEFAULT_TENANT_ID, name: DEFAULT_TENANT_NAME, code: 'joymarketing', status: 'active', isDefault: true },
+  })
   const users = [
     { id: 'admin1', name: '张管理', role: 'admin', email: 'admin@joymarketing.com', passwordEnv: 'SEED_ADMIN_PASSWORD' },
     { id: 'cadmin1', name: '李渠道', role: 'channel_admin', email: 'channeladmin@joymarketing.com', passwordEnv: 'SEED_CHANNEL_ADMIN_PASSWORD' },
@@ -23,10 +29,11 @@ async function main() {
     const existing = await prisma.user.findUnique({ where: { id: u.id } })
     if (!existing) {
       await prisma.user.create({ data: {
-        id: u.id, name: u.name, email: u.email, role: u.role,
+        id: u.id, tenantId: DEFAULT_TENANT_ID, name: u.name, email: u.email, role: u.role,
+        isPlatformAdmin: u.role === 'admin',
         passwordHash: await hash(seedPassword(u.passwordEnv)), mustChangePwd: true,
       } })
-    }
+    } else if (u.role === 'admin' && !existing.isPlatformAdmin) await prisma.user.update({ where: { id: u.id }, data: { isPlatformAdmin: true } })
   }
 
   const mockOwner = await prisma.user.findUniqueOrThrow({ where: { id: 'u_yd' } })

@@ -5,7 +5,7 @@
 
 技术栈建议（京东云）：
 - 后端：Node.js (NestJS / Express) 或 Java(Spring Boot)，本文以 REST 描述，GraphQL 亦可
-- 数据库：MySQL 8 / PostgreSQL（京东云 RDS）
+- 数据库：MySQL 8（京东云 RDS MySQL）
 - 缓存/会话：Redis（JWT 黑名单、登录限频）
 - 对象存储：京东云 OSS（举证截图、合同文件，**不要再用 base64 存库**）
 - 密钥：京东云 KMS 托管字段加密密钥

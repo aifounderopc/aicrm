@@ -28,14 +28,16 @@ const opportunityInclude = {
 
 type OpportunityWithRelations = Awaited<ReturnType<typeof prisma.opportunity.findFirst<typeof opportunityIncludeArgs>>>
 const opportunityIncludeArgs = { include: opportunityInclude }
+const jsonStringList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
 function toClientOpportunity(opp: NonNullable<OpportunityWithRelations>) {
   return {
     ...opp,
+    productInterests: jsonStringList(opp.productInterests),
     contact: opp.contact && {
       level: opp.contact.level,
       department: opp.contact.department,
-      contactTypes: opp.contact.contactTypes,
+      contactTypes: jsonStringList(opp.contact.contactTypes),
       encryptedName: opp.contact.encName ? 'encrypted' : undefined,
       encryptedContact: opp.contact.encContact ? 'encrypted' : undefined,
       phoneHash: opp.contact.phoneHash ?? undefined,
@@ -65,9 +67,9 @@ function toClientOpportunity(opp: NonNullable<OpportunityWithRelations>) {
 
 // 按当前身份构造可见范围：销售/渠道只见自己名下，管理类见全量
 function visibilityWhere(auth: NonNullable<import('../../middleware/auth.js').AuthContext>) {
-  if (isAdminRole(auth.user.role)) return {}
-  if (auth.user.role === 'channel') return { channelId: auth.user.channelId ?? '__none__' }
-  return { salesOwnerId: auth.user.id }
+  if (isAdminRole(auth.user.role)) return { tenantId: auth.user.tenantId }
+  if (auth.user.role === 'channel') return { tenantId: auth.user.tenantId, channelId: auth.user.channelId ?? '__none__' }
+  return { tenantId: auth.user.tenantId, salesOwnerId: auth.user.id }
 }
 
 // GET /opportunities
@@ -80,7 +82,7 @@ opportunityRouter.get('/', ah(async (req, res) => {
 
   const where: Record<string, unknown> = { ...visibilityWhere(auth) }
   if (stage && stage !== 'all') where.stage = stage
-  if (q) where.customerName = { contains: q, mode: 'insensitive' }
+  if (q) where.customerName = { contains: q }
 
   const [items, total] = await Promise.all([
     prisma.opportunity.findMany({ where, include: opportunityInclude, orderBy: { reportedAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
@@ -90,9 +92,9 @@ opportunityRouter.get('/', ah(async (req, res) => {
 }))
 
 // 活跃商机候选（撞单用）
-async function activeCandidates(industry?: string): Promise<CollisionCandidate[]> {
+async function activeCandidates(tenantId: string, industry?: string): Promise<CollisionCandidate[]> {
   const rows = await prisma.opportunity.findMany({
-    where: { stage: { notIn: ['released', 'closed'] } },
+    where: { tenantId, stage: { notIn: ['released', 'closed'] } },
     select: { id: true, customerNameNorm: true, industry: true, stage: true },
   })
   return industry ? rows : rows
@@ -101,15 +103,15 @@ async function activeCandidates(industry?: string): Promise<CollisionCandidate[]
 const checkSchema = z.object({ customerName: z.string().min(1), industry: z.string().min(1), companyName: z.string().optional() })
 opportunityRouter.post('/check-collision', ah(async (req, res) => {
   const { customerName, industry } = checkSchema.parse(req.body)
-  const result = detectCollision(customerName, industry, await activeCandidates())
+  const result = detectCollision(customerName, industry, await activeCandidates(req.auth!.user.tenantId))
   res.json(result)
 }))
 
 // GET /opportunities/:id —— 商机详情，按当前身份校验可见范围
 opportunityRouter.get('/:id', ah(async (req, res) => {
   const auth = req.auth!
-  const opp = await prisma.opportunity.findUnique({
-    where: { id: req.params.id },
+  const opp = await prisma.opportunity.findFirst({
+    where: { id: req.params.id, tenantId: auth.user.tenantId },
     include: opportunityInclude,
   })
   if (!opp) throw new ApiError(404, '商机不存在')
@@ -155,10 +157,13 @@ const createSchema = z.object({
 opportunityRouter.post('/', ah(async (req, res) => {
   const auth = req.auth!
   const input = createSchema.parse(req.body)
+  if (input.channelId && !await prisma.channel.findFirst({ where: { id: input.channelId, tenantId: auth.user.tenantId } })) {
+    throw new ApiError(404, '渠道不存在或不属于当前租户')
+  }
 
   const opp = await prisma.$transaction(async (tx) => {
     const actives = await tx.opportunity.findMany({
-      where: { stage: { notIn: ['released', 'closed'] } },
+      where: { tenantId: auth.user.tenantId, stage: { notIn: ['released', 'closed'] } },
       select: { id: true, customerNameNorm: true, industry: true, stage: true },
     })
     const { collision } = detectCollision(input.customerName, input.industry, actives)
@@ -167,6 +172,7 @@ opportunityRouter.post('/', ah(async (req, res) => {
     const releaseAt = new Date(Date.now() + 30 * 86400_000) // 默认 30 天保护
     return tx.opportunity.create({
       data: {
+        tenantId: auth.user.tenantId,
         customerName: input.customerName,
         customerNameNorm: normalizeName(input.customerName),
         companyName: input.companyName,
@@ -220,7 +226,7 @@ const stageSchema = z.object({
 opportunityRouter.patch('/:id/stage', ah(async (req, res) => {
   const auth = req.auth!
   const { stage, signingInfo } = stageSchema.parse(req.body)
-  const opp = await prisma.opportunity.findUnique({ where: { id: req.params.id } })
+  const opp = await prisma.opportunity.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
   if (!opp) throw new ApiError(404, '商机不存在')
   if (!isAdminRole(auth.user.role) && opp.salesOwnerId !== auth.user.id) throw new ApiError(403, '无权操作该商机')
 
@@ -245,7 +251,7 @@ opportunityRouter.patch('/:id/stage', ah(async (req, res) => {
 // GET /opportunities/:id/contact —— 解密联系人，仅报备人/管理员，记审计
 opportunityRouter.get('/:id/contact', ah(async (req, res) => {
   const auth = req.auth!
-  const opp = await prisma.opportunity.findUnique({ where: { id: req.params.id }, include: { contact: true } })
+  const opp = await prisma.opportunity.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId }, include: { contact: true } })
   if (!opp || !opp.contact) throw new ApiError(404, '联系人不存在')
   const allowed = isAdminRole(auth.authRole) || opp.salesOwnerId === auth.user.id
   if (!allowed) throw new ApiError(403, '无权查看加密联系人')
@@ -260,7 +266,7 @@ opportunityRouter.get('/:id/contact', ah(async (req, res) => {
 // 取商机 + 权限校验（owner 或管理员）
 async function getOwnedOrAdmin(req: import('express').Request, requireAdmin = false) {
   const auth = req.auth!
-  const opp = await prisma.opportunity.findUnique({ where: { id: req.params.id } })
+  const opp = await prisma.opportunity.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
   if (!opp) throw new ApiError(404, '商机不存在')
   if (requireAdmin) {
     if (!isAdminRole(auth.authRole)) throw new ApiError(403, '仅管理员可操作')
@@ -303,7 +309,7 @@ opportunityRouter.post('/:id/renewals', ah(async (req, res) => {
   const existing = await prisma.renewalRequest.findFirst({ where: { opportunityId: opp.id, status: 'pending' } })
   if (existing) throw new ApiError(409, '已有待处理的续期申请')
   const r = await prisma.renewalRequest.create({ data: { opportunityId: opp.id, requesterId: auth.user.id, status: 'pending', reason: req.body?.reason } })
-  await notifyAdmins({ title: '续期申请待审批', body: `${auth.user.name} 申请「${opp.customerName}」续期`, type: 'info', opportunityId: opp.id })
+  await notifyAdmins({ tenantId: auth.user.tenantId, title: '续期申请待审批', body: `${auth.user.name} 申请「${opp.customerName}」续期`, type: 'info', opportunityId: opp.id })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '申请续期', detail: `「${opp.customerName}」`, targetType: 'opportunity', targetId: opp.id })
   res.status(201).json(r)
 }))
@@ -312,7 +318,7 @@ opportunityRouter.post('/:id/renewals', ah(async (req, res) => {
 opportunityRouter.post('/:id/renewals/:rid/approve', ah(async (req, res) => {
   const { auth, opp } = await getOwnedOrAdmin(req, true)
   const r = await prisma.renewalRequest.findUnique({ where: { id: req.params.rid } })
-  if (!r || r.status !== 'pending') throw new ApiError(404, '续期申请不存在或已处理')
+  if (!r || r.opportunityId !== opp.id || r.status !== 'pending') throw new ApiError(404, '续期申请不存在或已处理')
   const newRelease = new Date(Math.max(opp.releaseAt.getTime(), Date.now()) + 30 * 86400_000)
   await prisma.$transaction([
     prisma.renewalRequest.update({ where: { id: r.id }, data: { status: 'approved', processedAt: new Date(), processedBy: auth.user.id } }),
@@ -328,7 +334,7 @@ opportunityRouter.post('/:id/renewals/:rid/reject', ah(async (req, res) => {
   const { auth, opp } = await getOwnedOrAdmin(req, true)
   const reason = String(req.body?.reason ?? '资源调配')
   const r = await prisma.renewalRequest.findUnique({ where: { id: req.params.rid } })
-  if (!r || r.status !== 'pending') throw new ApiError(404, '续期申请不存在或已处理')
+  if (!r || r.opportunityId !== opp.id || r.status !== 'pending') throw new ApiError(404, '续期申请不存在或已处理')
   await prisma.renewalRequest.update({ where: { id: r.id }, data: { status: 'rejected', rejectionReason: reason, processedAt: new Date(), processedBy: auth.user.id } })
   await notify({ userId: r.requesterId, title: '续期被拒绝', body: `「${opp.customerName}」续期未通过：${reason}`, type: 'error', opportunityId: opp.id })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '拒绝续期', detail: `「${opp.customerName}」：${reason}`, targetType: 'opportunity', targetId: opp.id })
@@ -338,12 +344,16 @@ opportunityRouter.post('/:id/renewals/:rid/reject', ah(async (req, res) => {
 // POST /:id/evidence/:fid/approve | reject —— 管理员审核举证
 opportunityRouter.post('/:id/evidence/:fid/approve', ah(async (req, res) => {
   const { auth, opp } = await getOwnedOrAdmin(req, true)
+  const file = await prisma.evidenceFile.findFirst({ where: { id: req.params.fid, opportunityId: opp.id } })
+  if (!file) throw new ApiError(404, '举证文件不存在')
   await prisma.evidenceFile.update({ where: { id: req.params.fid }, data: { status: 'approved' } })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '通过举证', detail: `「${opp.customerName}」举证审核通过`, targetType: 'opportunity', targetId: opp.id })
   res.json({ ok: true })
 }))
 opportunityRouter.post('/:id/evidence/:fid/reject', ah(async (req, res) => {
   const { auth, opp } = await getOwnedOrAdmin(req, true)
+  const file = await prisma.evidenceFile.findFirst({ where: { id: req.params.fid, opportunityId: opp.id } })
+  if (!file) throw new ApiError(404, '举证文件不存在')
   const reason = String(req.body?.reason ?? '材料不符')
   await prisma.evidenceFile.update({ where: { id: req.params.fid }, data: { status: 'rejected', rejectReason: reason } })
   await notify({ userId: opp.salesOwnerId, title: '举证被驳回', body: `「${opp.customerName}」举证未通过：${reason}`, type: 'warning', opportunityId: opp.id })

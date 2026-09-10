@@ -2,6 +2,8 @@
 
 预发环境用于在生产发布前做业务验收。当前建议先复用同一台京东云 ECS，用独立目录、独立数据库 volume 和独立端口隔离生产。
 
+当前预发主库为 MySQL 8；历史 PostgreSQL 数据卷仅在迁移和回滚窗口内由 `legacy-db` 挂载，不对外开放端口。首次迁移完成后，迁移脚本检测到 MySQL 已有租户数据会自动跳过重复导入。
+
 ## 环境划分
 
 | 环境 | 分支 | 服务器目录 | 访问地址 | Compose 项目名 |
@@ -122,5 +124,6 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml -p aicrm-st
 
 - 预发和生产必须使用不同的 `DB_PASSWORD`、`JWT_SECRET`、`FIELD_ENC_KEY`。
 - 预发不要直接使用生产数据库。
+- MySQL 使用 `utf8mb4` 字符集；迁移确认和回滚窗口结束前，不要删除 `pgdata_staging` 历史卷和迁移前 SQL 备份。
 - 若京东云安全组未放行 `8080`，需要在控制台允许入站 TCP `8080`。
 - 后续绑定域名后，可以把预发切到 `https://staging.yourdomain.com`，同时将 `COOKIE_SECURE=true`。

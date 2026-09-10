@@ -48,9 +48,9 @@ logRouter.get('/', ah(async (req, res) => {
   if (!isAdminRole(auth.authRole)) throw new ApiError(403, '无权限查看操作日志')
 
   const query = querySchema.parse(req.query)
-  const where: Record<string, unknown> = {}
+  const where: Record<string, unknown> = { tenantId: auth.user.tenantId }
   if (query.actorId) where.actorId = query.actorId
-  if (query.action) where.action = { contains: query.action, mode: 'insensitive' }
+  if (query.action) where.action = { contains: query.action }
   if (query.from || query.to) {
     where.createdAt = {
       ...(query.from ? { gte: new Date(query.from) } : {}),

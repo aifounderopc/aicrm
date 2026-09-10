@@ -1,6 +1,7 @@
 import { prisma } from '../../db.js'
 import type { FeishuInboundMessage, FeishuMessageEvent } from './feishu.receiver.js'
 import { processFeishuMessageSignal } from '../agent/agent.service.js'
+import { DEFAULT_TENANT_ID } from '../../tenant.js'
 
 export async function handleFeishuMessage(
   message: FeishuInboundMessage,
@@ -8,7 +9,7 @@ export async function handleFeishuMessage(
 ): Promise<void> {
   const saved = await prisma.feishuMessage.upsert({
     where: { id: message.id },
-    create: message,
+    create: { ...message, tenantId: DEFAULT_TENANT_ID },
     update: {
       chatId: message.chatId,
       chatName: message.chatName,

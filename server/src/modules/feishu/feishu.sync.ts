@@ -1,4 +1,5 @@
 import { prisma } from '../../db.js'
+import { DEFAULT_TENANT_ID } from '../../tenant.js'
 import { handleFeishuMessage } from './feishu.handler.js'
 import { readableContent, type FeishuCredentials, type FeishuInboundMessage } from './feishu.receiver.js'
 
@@ -136,7 +137,7 @@ export async function syncFeishuHistory(credentials: FeishuCredentials): Promise
     }
 
     await prisma.integrationConnection.updateMany({
-      where: { provider: 'feishu' },
+      where: { tenantId: DEFAULT_TENANT_ID, provider: 'feishu' },
       data: { status: 'connected', lastError: null, lastConnectedAt: new Date() },
     })
     if (pending.length) console.info('[feishu] history sync completed', { chats: chats.length, inserted: pending.length })
@@ -144,7 +145,7 @@ export async function syncFeishuHistory(credentials: FeishuCredentials): Promise
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 240) : '飞书消息同步失败'
     await prisma.integrationConnection.updateMany({
-      where: { provider: 'feishu' }, data: { status: 'failed', lastError: message },
+      where: { tenantId: DEFAULT_TENANT_ID, provider: 'feishu' }, data: { status: 'failed', lastError: message },
     }).catch(() => undefined)
     console.error('[feishu] history sync failed', message)
     return 0

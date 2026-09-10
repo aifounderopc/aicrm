@@ -15,13 +15,14 @@ const pub = (u: { id: string; name: string; email: string; role: string; channel
   ({ id: u.id, name: u.name, email: u.email, role: u.role, channelId: u.channelId, isJdManager: u.isJdManager, disabled: u.disabled })
 
 // GET /channels —— 含统计与关联账号
-channelRouter.get('/', ah(async (_req, res) => {
-  const channels = await prisma.channel.findMany({ orderBy: { createdAt: 'desc' } })
+channelRouter.get('/', ah(async (req, res) => {
+  const tenantId = req.auth!.user.tenantId
+  const channels = await prisma.channel.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' } })
   const result = await Promise.all(channels.map(async (c) => {
     const [total, signed, users] = await Promise.all([
-      prisma.opportunity.count({ where: { channelId: c.id } }),
-      prisma.opportunity.count({ where: { channelId: c.id, stage: 'signed' } }),
-      prisma.user.findMany({ where: { channelId: c.id, role: 'channel' } }),
+      prisma.opportunity.count({ where: { tenantId, channelId: c.id } }),
+      prisma.opportunity.count({ where: { tenantId, channelId: c.id, stage: 'signed' } }),
+      prisma.user.findMany({ where: { tenantId, channelId: c.id, role: 'channel' } }),
     ])
     const linkedUser = users.find(u => !u.isJdManager)
     const jdUser = users.find(u => u.isJdManager)
@@ -54,12 +55,12 @@ channelRouter.post('/', ah(async (req, res) => {
   }
 
   const created = await prisma.$transaction(async (tx) => {
-    const ch = await tx.channel.create({ data: { ...channel, status: 'active' } })
+    const ch = await tx.channel.create({ data: { ...channel, tenantId: auth.user.tenantId, status: 'active' } })
     if (account) {
-      await tx.user.create({ data: { name: account.name, email: account.email.toLowerCase(), passwordHash: await hashPassword(account.password), role: 'channel', channelId: ch.id, mustChangePwd: true } })
+      await tx.user.create({ data: { tenantId: auth.user.tenantId, name: account.name, email: account.email.toLowerCase(), passwordHash: await hashPassword(account.password), role: 'channel', channelId: ch.id, mustChangePwd: true } })
     }
     if (jdAccount) {
-      await tx.user.create({ data: { name: jdAccount.name, email: jdAccount.email.toLowerCase(), passwordHash: await hashPassword(jdAccount.password), role: 'channel', channelId: ch.id, isJdManager: true, mustChangePwd: true } })
+      await tx.user.create({ data: { tenantId: auth.user.tenantId, name: jdAccount.name, email: jdAccount.email.toLowerCase(), passwordHash: await hashPassword(jdAccount.password), role: 'channel', channelId: ch.id, isJdManager: true, mustChangePwd: true } })
     }
     return ch
   })
@@ -72,7 +73,9 @@ const updateSchema = z.object({ name: z.string().optional(), fullName: z.string(
 channelRouter.patch('/:id', ah(async (req, res) => {
   const auth = req.auth!
   const updates = updateSchema.parse(req.body)
-  const ch = await prisma.channel.update({ where: { id: req.params.id }, data: updates })
+  const existing = await prisma.channel.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
+  if (!existing) throw new ApiError(404, '渠道不存在')
+  const ch = await prisma.channel.update({ where: { id: existing.id }, data: updates })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '编辑渠道信息', detail: `渠道：${ch.name}`, targetType: 'channel', targetId: ch.id })
   res.json(ch)
 }))
@@ -80,12 +83,12 @@ channelRouter.patch('/:id', ah(async (req, res) => {
 // POST /channels/:id/toggle —— 启停渠道并同步停用关联账号
 channelRouter.post('/:id/toggle', ah(async (req, res) => {
   const auth = req.auth!
-  const ch = await prisma.channel.findUnique({ where: { id: req.params.id } })
+  const ch = await prisma.channel.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
   if (!ch) throw new ApiError(404, '渠道不存在')
   const next = ch.status === 'active' ? 'disabled' : 'active'
   const [updated] = await prisma.$transaction([
     prisma.channel.update({ where: { id: ch.id }, data: { status: next } }),
-    prisma.user.updateMany({ where: { channelId: ch.id }, data: { disabled: next === 'disabled' } }),
+    prisma.user.updateMany({ where: { tenantId: auth.user.tenantId, channelId: ch.id }, data: { disabled: next === 'disabled' } }),
   ])
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: next === 'disabled' ? '停用渠道' : '启用渠道', detail: `渠道：${ch.name}`, targetType: 'channel', targetId: ch.id })
   res.json(updated)
@@ -95,12 +98,14 @@ channelRouter.post('/:id/toggle', ah(async (req, res) => {
 channelRouter.post('/:id/account', ah(async (req, res) => {
   const auth = req.auth!
   const account = accountSchema.parse(req.body)
-  const existing = await prisma.user.findFirst({ where: { channelId: req.params.id, role: 'channel', isJdManager: false } })
+  const channel = await prisma.channel.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
+  if (!channel) throw new ApiError(404, '渠道不存在')
+  const existing = await prisma.user.findFirst({ where: { tenantId: auth.user.tenantId, channelId: req.params.id, role: 'channel', isJdManager: false } })
   if (existing) throw new ApiError(409, '该渠道已有登录账号')
   const pv = validatePasswordStrength(account.password)
   if (!pv.valid) throw new ApiError(400, pv.error!)
   if (await prisma.user.findUnique({ where: { email: account.email.toLowerCase() } })) throw new ApiError(409, '邮箱已被使用')
-  const u = await prisma.user.create({ data: { name: account.name, email: account.email.toLowerCase(), passwordHash: await hashPassword(account.password), role: 'channel', channelId: req.params.id, mustChangePwd: true } })
+  const u = await prisma.user.create({ data: { tenantId: auth.user.tenantId, name: account.name, email: account.email.toLowerCase(), passwordHash: await hashPassword(account.password), role: 'channel', channelId: req.params.id, mustChangePwd: true } })
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '补建渠道账号', detail: account.email, targetType: 'channel', targetId: req.params.id })
   res.status(201).json(pub(u))
 }))
@@ -108,10 +113,12 @@ channelRouter.post('/:id/account', ah(async (req, res) => {
 // DELETE /channels/:id —— 有商机数据则拒绝
 channelRouter.delete('/:id', ah(async (req, res) => {
   const auth = req.auth!
-  const hasData = await prisma.opportunity.count({ where: { channelId: req.params.id } })
+  const channel = await prisma.channel.findFirst({ where: { id: req.params.id, tenantId: auth.user.tenantId } })
+  if (!channel) throw new ApiError(404, '渠道不存在')
+  const hasData = await prisma.opportunity.count({ where: { tenantId: auth.user.tenantId, channelId: req.params.id } })
   if (hasData) throw new ApiError(409, '该渠道已有关联商机数据，无法删除')
   await prisma.$transaction([
-    prisma.user.deleteMany({ where: { channelId: req.params.id } }),
+    prisma.user.deleteMany({ where: { tenantId: auth.user.tenantId, channelId: req.params.id } }),
     prisma.channel.delete({ where: { id: req.params.id } }),
   ])
   await writeLog(req, { actorId: auth.user.id, actorName: auth.user.name, action: '删除渠道', detail: `渠道 ID：${req.params.id}`, targetType: 'channel', targetId: req.params.id })

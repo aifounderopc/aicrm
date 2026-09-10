@@ -14,17 +14,18 @@ export const authRouter = Router()
 // 登录限频：同 IP 10 分钟最多 10 次
 const loginLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false })
 
-function publicUser(u: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; mustChangePwd?: boolean }) {
-  return { id: u.id, name: u.name, email: u.email, role: u.role, channelId: u.channelId, isJdManager: u.isJdManager }
+function publicUser(u: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; tenantId: string; isPlatformAdmin: boolean; tenant?: { name: string }; mustChangePwd?: boolean }) {
+  return { id: u.id, name: u.name, email: u.email, role: u.role, channelId: u.channelId, isJdManager: u.isJdManager, tenantId: u.tenantId, tenantName: u.tenant?.name, isPlatformAdmin: u.isPlatformAdmin }
 }
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) })
 
 authRouter.post('/login', loginLimiter, ah(async (req, res) => {
   const { email, password } = loginSchema.parse(req.body)
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
+  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() }, include: { tenant: true } })
   if (!user) throw new ApiError(401, '账号或密码错误')
   if (user.disabled) throw new ApiError(403, '该账号已被停用，请联系管理员')
+  if (user.tenant.status !== 'active') throw new ApiError(403, '所属企业租户已停用，请联系平台管理员')
   const ok = await verifyPassword(password, user.passwordHash)
   if (!ok) throw new ApiError(401, '账号或密码错误')
 
@@ -41,7 +42,7 @@ authRouter.post('/logout', ah(async (_req, res) => {
 
 authRouter.get('/me', requireAuth, ah(async (req, res) => {
   const a = req.auth!
-  const authUser = await prisma.user.findUnique({ where: { id: a.authUserId } })
+  const authUser = await prisma.user.findUnique({ where: { id: a.authUserId }, include: { tenant: true } })
   res.json({ user: a.user, authUser: authUser && publicUser(authUser), isProxying: a.isProxying })
 }))
 
@@ -53,7 +54,7 @@ authRouter.post('/impersonate', requireAuth, ah(async (req, res) => {
   const target = await prisma.user.findUnique({ where: { id: userId } })
   if (!target) throw new ApiError(404, '账号不存在')
   const allowed =
-    a.authRole === 'admin' ||
+    (a.authRole === 'admin' && (a.authIsPlatformAdmin || target.tenantId === a.authTenantId)) ||
     (a.authRole === 'channel_admin' && target.role === 'channel') ||
     (a.authRole === 'sales_admin' && target.role === 'sales')
   if (!allowed) throw new ApiError(403, '无权代理访问该账号')

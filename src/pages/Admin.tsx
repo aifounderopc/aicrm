@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
 import { stageName, formatDate, daysUntil, amountLabel, validatePassword, passwordStrength, PASSWORD_RULE_HINT, roleName, isAdminRole, canManageChannels, canManageSales, canManageAdmins } from '../utils'
 import type { Opportunity } from '../types'
-import { Shield, Users, FileText, GitBranch, UserCheck, Bot, BrainCircuit, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Plus, RotateCcw, Save, TestTube2, Trash2 } from 'lucide-react'
+import { Shield, Users, FileText, GitBranch, UserCheck, Bot, BrainCircuit, Building2, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Plus, RotateCcw, Save, TestTube2, Trash2 } from 'lucide-react'
 import { useMobile } from '../hooks/useMobile'
 import { agentApi, type AgentConfiguration, type AgentConfigurationInput, type AgentModelConfiguration } from '../api/agent'
 import { ApiError } from '../api/client'
+import { tenantApi, type TenantSummary } from '../api/tenants'
 
 const thStyle: React.CSSProperties = {
   padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6b7280',
@@ -1608,7 +1609,75 @@ function AgentConfigSettings({ desc }: { desc: string }) {
   )
 }
 
+function TenantMgmt({ desc }: { desc: string }) {
+  const isMobile = useMobile()
+  const [tenants, setTenants] = useState<TenantSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ name: '', code: '', adminName: '', adminEmail: '', adminPassword: '' })
+
+  const load = async () => {
+    setLoading(true)
+    try { setTenants(await tenantApi.list()); setError('') }
+    catch (e) { setError(e instanceof Error ? e.message : '企业租户加载失败') }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { void load() }, [])
+
+  const create = async () => {
+    if (!form.name || !form.code || !form.adminName || !form.adminEmail || !form.adminPassword) return setError('请完整填写租户与管理员信息')
+    const passwordCheck = validatePassword(form.adminPassword)
+    if (!passwordCheck.valid) return setError(passwordCheck.error || '密码不符合安全要求')
+    setCreating(true)
+    try {
+      await tenantApi.create(form)
+      setForm({ name: '', code: '', adminName: '', adminEmail: '', adminPassword: '' })
+      setError('')
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : '创建失败') }
+    finally { setCreating(false) }
+  }
+
+  const toggle = async (tenant: TenantSummary) => {
+    try {
+      await tenantApi.update(tenant.id, { status: tenant.status === 'active' ? 'disabled' : 'active' })
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : '状态更新失败') }
+  }
+
+  return <div>
+    <div style={{ marginBottom: 16 }}><div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>企业租户管理</div><div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>{desc}</div></div>
+    <section style={{ padding: isMobile ? 16 : 20, borderRadius: 16, background: 'rgba(255,255,255,.9)', border: '1px solid #e5eef2', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 14, fontWeight: 700 }}><Plus size={16} color="#0891b2" />新增企业租户</div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr .8fr 1fr 1.2fr 1fr', gap: 10 }}>
+        <input style={inputStyle} placeholder="企业名称" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+        <input style={inputStyle} placeholder="租户编码" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '') })} />
+        <input style={inputStyle} placeholder="管理员姓名" value={form.adminName} onChange={e => setForm({ ...form, adminName: e.target.value })} />
+        <input style={inputStyle} placeholder="管理员邮箱" type="email" value={form.adminEmail} onChange={e => setForm({ ...form, adminEmail: e.target.value })} />
+        <input style={inputStyle} placeholder="初始密码" type="password" value={form.adminPassword} onChange={e => setForm({ ...form, adminPassword: e.target.value })} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 12 }}>
+        <span style={{ fontSize: 11, color: error ? '#dc2626' : '#94a3b8' }}>{error || '创建后将自动生成该租户的企业管理员账号，数据与其他租户隔离。'}</span>
+        <button onClick={() => void create()} disabled={creating} style={{ padding: '9px 16px', border: 0, borderRadius: 10, background: '#0891b2', color: 'white', fontWeight: 700, cursor: creating ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>{creating ? '创建中…' : '创建租户'}</button>
+      </div>
+    </section>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+      {loading ? <div style={{ padding: 30, color: '#64748b' }}><LoaderCircle className="spin" size={18} /> 正在加载</div> : tenants.map(tenant => <section key={tenant.id} style={{ padding: 18, borderRadius: 16, background: 'rgba(255,255,255,.92)', border: '1px solid #e5eef2', boxShadow: '0 4px 16px rgba(30,80,100,.05)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center', background: '#e6f8fc', color: '#087d9b' }}><Building2 size={20} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}><strong style={{ fontSize: 15 }}>{tenant.name}</strong>{tenant.isDefault && <span style={{ padding: '3px 7px', borderRadius: 7, background: '#dcfce7', color: '#047857', fontSize: 10, fontWeight: 700 }}>默认租户</span>}<span style={{ padding: '3px 7px', borderRadius: 7, background: tenant.status === 'active' ? '#e0f2fe' : '#f1f5f9', color: tenant.status === 'active' ? '#0369a1' : '#64748b', fontSize: 10 }}>{tenant.status === 'active' ? '运行中' : '已停用'}</span></div><div style={{ marginTop: 4, color: '#94a3b8', fontSize: 11 }}>{tenant.code}</div></div>
+          {!tenant.isDefault && <button onClick={() => void toggle(tenant)} style={{ padding: '6px 10px', border: '1px solid #dbe5ea', borderRadius: 8, background: 'white', color: '#475569', fontSize: 11, cursor: 'pointer' }}>{tenant.status === 'active' ? '停用' : '启用'}</button>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>{[['账号', tenant._count.users], ['渠道', tenant._count.channels], ['商机', tenant._count.opportunities]].map(([label, value]) => <div key={String(label)} style={{ padding: '10px 8px', textAlign: 'center', borderRadius: 10, background: '#f8fafc' }}><div style={{ fontSize: 18, fontWeight: 750, color: '#0f172a' }}>{value}</div><div style={{ fontSize: 10, color: '#94a3b8' }}>{label}</div></div>)}</div>
+        <div style={{ marginTop: 13, paddingTop: 12, borderTop: '1px solid #eef2f4', fontSize: 12, color: '#64748b' }}>企业管理员：{tenant.primaryAdmin ? `${tenant.primaryAdmin.name} · ${tenant.primaryAdmin.email}` : '尚未配置'}</div>
+      </section>)}
+    </div>
+  </div>
+}
+
 const allTabs = [
+  { key: 'tenants',  label: '企业租户管理', icon: Building2, desc: '创建和管理企业租户，各租户的商机、账号与配置相互隔离', can: (r: string) => isAdminRole(r) },
   { key: 'sales',    label: '销售管理',     icon: Users,     desc: '管理 JD 销售人员信息、所属组别及登录账号', can: (r: string) => canManageSales(r) },
   { key: 'channels', label: '渠道伙伴管理', icon: GitBranch, desc: '管理渠道伙伴信息及其登录账号', can: (r: string) => canManageChannels(r) },
   { key: 'admins',   label: '管理员账号', icon: Shield,    desc: '管理系统管理员账号，支持多账号添加', can: (r: string) => canManageAdmins(r) },
@@ -1619,7 +1688,10 @@ const allTabs = [
 export default function Admin() {
   const { currentUser } = useStore()
   const isMobile = useMobile()
-  const tabs = allTabs.filter(t => t.can(currentUser.role))
+  // 兼容升级前已持久化的管理员会话：旧对象没有 isPlatformAdmin 字段。
+  // 新租户管理员会由后端明确返回 false；租户 API 本身仍执行平台级鉴权。
+  const canManageTenants = currentUser.role === 'admin' && currentUser.isPlatformAdmin !== false
+  const tabs = allTabs.filter(t => t.can(currentUser.role) && (t.key !== 'tenants' || canManageTenants))
   const [tab, setTab] = useState(tabs[0]?.key ?? 'logs')
 
   if (!isAdminRole(currentUser.role)) {
@@ -1637,7 +1709,7 @@ export default function Admin() {
     <div>
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: '#111111', margin: '0 0 2px' }}>管理后台</h1>
-        <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>系统账号、渠道及操作日志管理</p>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>系统账号、渠道、租户及操作日志管理{currentUser.tenantName ? ` · 当前租户：${currentUser.tenantName}` : ''}</p>
       </div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'rgba(255,255,255,0.85)', borderRadius: 14, padding: 5, width: isMobile ? '100%' : 'fit-content', maxWidth: '100%', overflowX: 'auto', boxShadow: '0 2px 10px rgba(0,0,0,0.07)' }}>
         {tabs.map(({ key, label, icon: Icon }) => (
@@ -1654,6 +1726,7 @@ export default function Admin() {
         ))}
       </div>
 
+      {tab === 'tenants' && <TenantMgmt desc={currentTab.desc} />}
       {tab === 'channels' && <ChannelMgmt desc={currentTab.desc} />}
       {tab === 'sales' && <SalesMgmt desc={currentTab.desc} />}
       {tab === 'admins' && <AdminMgmt desc={currentTab.desc} />}

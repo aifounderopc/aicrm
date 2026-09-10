@@ -2,6 +2,7 @@ import { config } from '../../config.js'
 import { prisma } from '../../db.js'
 import { decryptField, encryptField } from '../../util/crypto.js'
 import { assembleAgentSystemPrompt, DEFAULT_BUSINESS_PROMPT, DEFAULT_RESPONSE_PROMPT, DEFAULT_SOUL_PROMPT } from './agent.prompts.js'
+import { DEFAULT_TENANT_ID } from '../../tenant.js'
 
 export type AgentRuntimeConfig = {
   id?: string
@@ -15,11 +16,11 @@ export type AgentRuntimeConfig = {
   systemPrompt: string
 }
 
-export async function loadAgentRuntimeConfigs(): Promise<AgentRuntimeConfig[]> {
+export async function loadAgentRuntimeConfigs(tenantId = DEFAULT_TENANT_ID): Promise<AgentRuntimeConfig[]> {
   const [stored, models] = await Promise.all([
-    prisma.agentConfiguration.findUnique({ where: { id: 'default' } }),
+    prisma.agentConfiguration.findUnique({ where: { tenantId } }),
     prisma.agentModelConfiguration.findMany({
-      where: { enabled: true },
+      where: { tenantId, enabled: true },
       orderBy: [{ isDefault: 'desc' }, { priority: 'asc' }, { createdAt: 'asc' }],
     }),
   ])
@@ -49,24 +50,24 @@ export async function loadAgentRuntimeConfigs(): Promise<AgentRuntimeConfig[]> {
   }]
 }
 
-export async function loadAgentRuntimeConfig(): Promise<AgentRuntimeConfig> {
-  return (await loadAgentRuntimeConfigs())[0]
+export async function loadAgentRuntimeConfig(tenantId = DEFAULT_TENANT_ID): Promise<AgentRuntimeConfig> {
+  return (await loadAgentRuntimeConfigs(tenantId))[0]
 }
 
 export async function persistEnvironmentAgentConfig(): Promise<void> {
   if (!config.deepseekApiKey) return
   await prisma.agentConfiguration.upsert({
-    where: { id: 'default' },
+    where: { tenantId: DEFAULT_TENANT_ID },
     create: {
-      id: 'default', model: config.deepseekModel, baseUrl: config.deepseekBaseUrl,
+      id: 'default', tenantId: DEFAULT_TENANT_ID, model: config.deepseekModel, baseUrl: config.deepseekBaseUrl,
       encryptedApiKey: encryptField(config.deepseekApiKey), soulPrompt: DEFAULT_SOUL_PROMPT,
       businessPrompt: DEFAULT_BUSINESS_PROMPT, responsePrompt: DEFAULT_RESPONSE_PROMPT,
     },
     update: {},
   })
-  const existingModels = await prisma.agentModelConfiguration.count()
+  const existingModels = await prisma.agentModelConfiguration.count({ where: { tenantId: DEFAULT_TENANT_ID } })
   if (!existingModels) await prisma.agentModelConfiguration.create({ data: {
-    name: '环境默认模型', model: config.deepseekModel, baseUrl: config.deepseekBaseUrl,
+    tenantId: DEFAULT_TENANT_ID, name: '环境默认模型', model: config.deepseekModel, baseUrl: config.deepseekBaseUrl,
     encryptedApiKey: encryptField(config.deepseekApiKey), enabled: true, isDefault: true, priority: 0,
   } })
 }

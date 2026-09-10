@@ -9,6 +9,7 @@ import { writeLog } from '../../util/audit.js'
 import { decryptField, encryptField } from '../../util/crypto.js'
 import { activateFeishuReceiver } from '../feishu/feishu.service.js'
 import { getFeishuReceiverStatus, verifyFeishuCredentials } from '../feishu/feishu.receiver.js'
+import { DEFAULT_TENANT_ID } from '../../tenant.js'
 
 export const integrationRouter = Router()
 integrationRouter.use(requireAuth)
@@ -30,7 +31,8 @@ const draftImNames: Record<(typeof draftImProviders)[number], string> = {
 
 integrationRouter.get('/im/:provider', ah(async (req, res) => {
   const provider = draftImProviderSchema.parse(req.params.provider)
-  const connection = await prisma.integrationConnection.findUnique({ where: { provider } })
+  const tenantId = req.auth!.user.tenantId
+  const connection = await prisma.integrationConnection.findUnique({ where: { tenantId_provider: { tenantId, provider } } })
   res.json({
     provider,
     configured: Boolean(connection),
@@ -45,14 +47,15 @@ integrationRouter.put('/im/:provider', requireRole(isAdminRole), ah(async (req, 
   const auth = req.auth!
   const provider = draftImProviderSchema.parse(req.params.provider)
   const input = draftImConfigSchema.parse(req.body)
-  const existing = await prisma.integrationConnection.findUnique({ where: { provider } })
+  const tenantId = auth.user.tenantId
+  const existing = await prisma.integrationConnection.findUnique({ where: { tenantId_provider: { tenantId, provider } } })
   const appSecret = input.appSecret || (existing ? decryptField(existing.encryptedAppSecret) : '')
   if (!appSecret) throw new ApiError(400, `请输入${draftImNames[provider]}应用密钥`)
 
   const connection = await prisma.integrationConnection.upsert({
-    where: { provider },
+    where: { tenantId_provider: { tenantId, provider } },
     create: {
-      provider, appId: input.appId, encryptedAppSecret: encryptField(appSecret),
+      tenantId, provider, appId: input.appId, encryptedAppSecret: encryptField(appSecret),
       status: 'configured', updatedBy: auth.user.id,
     },
     update: {
@@ -71,20 +74,22 @@ integrationRouter.put('/im/:provider', requireRole(isAdminRole), ah(async (req, 
   res.json({ provider, configured: true, appId: connection.appId, hasSecret: true, status: 'configured', updatedAt: connection.updatedAt })
 }))
 
-integrationRouter.get('/feishu', ah(async (_req, res) => {
+integrationRouter.get('/feishu', ah(async (req, res) => {
+  const tenantId = req.auth!.user.tenantId
   const [connection, messageCount, latest] = await Promise.all([
-    prisma.integrationConnection.findUnique({ where: { provider: 'feishu' } }),
-    prisma.feishuMessage.count(),
-    prisma.feishuMessage.findFirst({ orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+    prisma.integrationConnection.findUnique({ where: { tenantId_provider: { tenantId, provider: 'feishu' } } }),
+    prisma.feishuMessage.count({ where: { tenantId } }),
+    prisma.feishuMessage.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
   ])
   const runtime = getFeishuReceiverStatus()
-  const configured = Boolean(connection || (config.feishuAppId && config.feishuAppSecret))
+  const useEnvironmentDefault = tenantId === DEFAULT_TENANT_ID
+  const configured = Boolean(connection || (useEnvironmentDefault && config.feishuAppId && config.feishuAppSecret))
   res.json({
     configured,
-    appId: connection?.appId ?? config.feishuAppId ?? '',
-    hasSecret: Boolean(connection?.encryptedAppSecret || config.feishuAppSecret),
-    status: runtime.state,
-    error: runtime.error ?? connection?.lastError ?? null,
+    appId: connection?.appId ?? (useEnvironmentDefault ? config.feishuAppId : '') ?? '',
+    hasSecret: Boolean(connection?.encryptedAppSecret || (useEnvironmentDefault && config.feishuAppSecret)),
+    status: configured ? runtime.state : 'idle',
+    error: configured ? runtime.error ?? connection?.lastError ?? null : null,
     lastConnectedAt: connection?.lastConnectedAt ?? null,
     messageCount,
     latestMessageAt: latest?.createdAt ?? null,
@@ -93,8 +98,9 @@ integrationRouter.get('/feishu', ah(async (_req, res) => {
 
 integrationRouter.put('/feishu', requireRole(isAdminRole), ah(async (req, res) => {
   const auth = req.auth!
+  const tenantId = auth.user.tenantId
   const input = configSchema.parse(req.body)
-  const existing = await prisma.integrationConnection.findUnique({ where: { provider: 'feishu' } })
+  const existing = await prisma.integrationConnection.findUnique({ where: { tenantId_provider: { tenantId, provider: 'feishu' } } })
   const appSecret = input.appSecret || (existing ? decryptField(existing.encryptedAppSecret) : '')
   if (!appSecret) throw new ApiError(400, '请输入飞书 App Secret')
 
@@ -104,15 +110,15 @@ integrationRouter.put('/feishu', requireRole(isAdminRole), ah(async (req, res) =
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 240) : '飞书连接失败'
     if (existing) {
-      await prisma.integrationConnection.update({ where: { provider: 'feishu' }, data: { status: 'failed', lastError: message } })
+      await prisma.integrationConnection.update({ where: { tenantId_provider: { tenantId, provider: 'feishu' } }, data: { status: 'failed', lastError: message } })
     }
     throw new ApiError(400, `飞书连接测试失败：${message}`)
   }
 
   const connection = await prisma.integrationConnection.upsert({
-    where: { provider: 'feishu' },
+    where: { tenantId_provider: { tenantId, provider: 'feishu' } },
     create: {
-      provider: 'feishu', appId: input.appId, encryptedAppSecret: encryptField(appSecret),
+      tenantId, provider: 'feishu', appId: input.appId, encryptedAppSecret: encryptField(appSecret),
       status: 'connected', lastConnectedAt: new Date(), updatedBy: auth.user.id,
     },
     update: {
@@ -136,13 +142,13 @@ const messageQuerySchema = z.object({ limit: z.coerce.number().int().positive().
 integrationRouter.get('/feishu/messages', ah(async (req, res) => {
   const auth = req.auth!
   const { limit } = messageQuerySchema.parse(req.query)
-  const recent = await prisma.feishuMessage.findMany({ orderBy: { createdAt: 'desc' }, take: 200 })
+  const recent = await prisma.feishuMessage.findMany({ where: { tenantId: auth.user.tenantId }, orderBy: { createdAt: 'desc' }, take: 200 })
   let visible = recent
 
   if (!isAdminRole(auth.user.role)) {
     const opportunityWhere = auth.user.role === 'channel'
-      ? { channelId: auth.user.channelId ?? '__none__' }
-      : { salesOwnerId: auth.user.id }
+      ? { tenantId: auth.user.tenantId, channelId: auth.user.channelId ?? '__none__' }
+      : { tenantId: auth.user.tenantId, salesOwnerId: auth.user.id }
     const opportunities = await prisma.opportunity.findMany({
       where: opportunityWhere,
       select: { customerName: true, companyName: true },

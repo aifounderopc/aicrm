@@ -20,7 +20,8 @@ export async function notify(params: {
 }
 
 // 给所有管理员发通知（如续期申请待审批）
-export async function notifyAdmins(params: { title: string; body: string; type?: 'info' | 'warning' | 'success' | 'error'; opportunityId?: string }) {
-  const admins = await prisma.user.findMany({ where: { role: 'admin', disabled: false }, select: { id: true } })
-  await Promise.all(admins.map(a => notify({ userId: a.id, ...params })))
+export async function notifyAdmins(params: { tenantId: string; title: string; body: string; type?: 'info' | 'warning' | 'success' | 'error'; opportunityId?: string }) {
+  const admins = await prisma.user.findMany({ where: { tenantId: params.tenantId, role: 'admin', disabled: false }, select: { id: true } })
+  const { tenantId: _tenantId, ...notification } = params
+  await Promise.all(admins.map(a => notify({ userId: a.id, ...notification })))
 }

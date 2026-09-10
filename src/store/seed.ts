@@ -62,10 +62,13 @@ export const seedData: AppState = {
     name: '张管理',
     role: 'admin',
     email: 'admin@joymarketing.com',
+    tenantId: 'tenant_joymarketing',
+    tenantName: 'JoyMarketing 声访',
+    isPlatformAdmin: true,
   },
 
   users: [
-    { id: 'admin1',    name: '张管理',  role: 'admin',         email: 'admin@joymarketing.com', password: demoPasswords.admin },
+    { id: 'admin1',    name: '张管理',  role: 'admin',         email: 'admin@joymarketing.com', password: demoPasswords.admin, tenantId: 'tenant_joymarketing', tenantName: 'JoyMarketing 声访', isPlatformAdmin: true },
     { id: 'cadmin1',   name: '李渠道',  role: 'channel_admin', email: 'channeladmin@joymarketing.com', password: demoPasswords.channelAdmin },
     { id: 'sadmin1',   name: '王直客',  role: 'sales_admin',   email: 'salesadmin@joymarketing.com',   password: demoPasswords.salesAdmin },
     // 销售团队（默认密码 Joy@Sales2024）

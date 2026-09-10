@@ -1,6 +1,6 @@
 # JoyMarketing CRM — 后端服务
 
-Node + TypeScript + Express + Prisma(PostgreSQL)。实现见 `BACKEND_DESIGN.md`。
+Node + TypeScript + Express + Prisma(MySQL 8)。实现见 `BACKEND_DESIGN.md`。
 
 ## 当前进度
 已完成（可运行的核心骨架）：

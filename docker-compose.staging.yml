@@ -3,6 +3,24 @@
 #   docker compose --env-file .env.staging -f docker-compose.staging.yml -p aicrm-staging up -d --build
 services:
   db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-joycrm_staging}
+      MYSQL_USER: ${DB_USER:-joycrm_staging}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?需在 .env.staging 设置 DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?需在 .env.staging 设置 DB_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysqldata_staging:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u${DB_USER:-joycrm_staging} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # 迁移完成后保留的 PostgreSQL 回滚源，不对外开放端口。
+  legacy-db:
     image: postgres:16-alpine
     restart: always
     environment:
@@ -23,8 +41,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      legacy-db:
+        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-joycrm_staging}:${DB_PASSWORD}@db:5432/${DB_NAME:-joycrm_staging}?schema=public
+      DATABASE_URL: mysql://${DB_USER:-joycrm_staging}:${DB_PASSWORD}@db:3306/${DB_NAME:-joycrm_staging}
+      LEGACY_DATABASE_URL: postgresql://${DB_USER:-joycrm_staging}:${DB_PASSWORD}@legacy-db:5432/${DB_NAME:-joycrm_staging}?schema=public
+      MIGRATE_LEGACY_POSTGRES: "true"
       JWT_SECRET: ${JWT_SECRET:?需在 .env.staging 设置 JWT_SECRET}
       JWT_EXPIRES_IN: "2h"
       FIELD_ENC_KEY: ${FIELD_ENC_KEY:?需在 .env.staging 设置 FIELD_ENC_KEY}
@@ -64,5 +86,6 @@ services:
       - "${WEB_PORT:-8080}:80"
 
 volumes:
+  mysqldata_staging:
   pgdata_staging:
   harness_sessions_staging:

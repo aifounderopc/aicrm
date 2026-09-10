@@ -7,14 +7,14 @@ export async function runAutoRelease() {
   const now = new Date()
   const expired = await prisma.opportunity.findMany({
     where: { stage: { in: ['reporting', 'contacting', 'proposal', 'negotiation', 'signing'] }, lockedPermanently: false, releaseAt: { lt: now } },
-    select: { id: true, customerName: true, salesOwnerId: true },
+    select: { id: true, tenantId: true, customerName: true, salesOwnerId: true },
   })
 
   for (const o of expired) {
     await prisma.$transaction([
       prisma.opportunity.update({ where: { id: o.id }, data: { stage: 'released', releasedAt: now, releaseReason: '保护期到期自动释放', releasedBy: 'system' } }),
       prisma.notification.create({ data: { userId: o.salesOwnerId, title: '商机已自动释放', body: `「${o.customerName}」保护期到期，已自动释放`, type: 'warning' } }),
-      prisma.operationLog.create({ data: { actorId: 'system', actorName: '系统', action: '自动释放', detail: `「${o.customerName}」保护期到期`, targetType: 'opportunity', targetId: o.id, ip: 'system', userAgent: 'cron' } }),
+      prisma.operationLog.create({ data: { tenantId: o.tenantId, actorId: 'system', actorName: '系统', action: '自动释放', detail: `「${o.customerName}」保护期到期`, targetType: 'opportunity', targetId: o.id, ip: 'system', userAgent: 'cron' } }),
     ]).catch(e => console.error('[autoRelease] 释放失败', o.id, e))
   }
 

@@ -1,7 +1,7 @@
 # JoyMarketing CRM — 京东云部署指南
 
 两种部署形态，按团队成熟度选：
-- **方案 A：单台云主机 + docker-compose**（最快上线，含自托管 PostgreSQL）
+- **方案 A：单台云主机 + docker-compose**（最快上线，含自托管 MySQL 8）
 - **方案 B：容器服务 + RDS/Redis/OSS**（生产推荐，托管中间件、可弹性伸缩）
 
 构建产物：`Dockerfile`（前端 Nginx）、`server/Dockerfile`（后端）、`docker-compose.yml`、`nginx.conf`。
@@ -45,14 +45,14 @@ docker compose logs -f api    # 应看到 prisma migrate deploy + “API 已启�
 - 首次起来后，把 `.env` 的 `SEED_ON_START` 改回 `false`，`docker compose up -d` 重启 api。
 - **首登强制改密**：种子账号 `must_change_pwd=true`，登录后引导改密（前端可后续加强制改密页）。
 
-> 安全组：只放行 80/443，**不要**对公网开放 5432。
+> 安全组：只放行 80/443，**不要**对公网开放 3306。
 
 ---
 
 ## 方案 B：京东云容器服务 + 托管中间件（生产推荐）
 
 ### 1. 中间件
-- **RDS for PostgreSQL**：建实例 + 库 `joycrm`，记下私网连接串。
+- **RDS for MySQL 8**：建实例 + 库 `joycrm`（字符集 `utf8mb4`），记下私网连接串。
 - **Redis**（可选，后续刷新令牌/黑名单/登录计数用）。
 - **OSS**：举证截图/合同文件桶（私有读写 + 直传签名）。
 - **KMS**：托管 `FIELD_ENC_KEY` 的信封加密密钥。
@@ -71,7 +71,7 @@ docker push <registry>/joycrm-api:1.0
 ### 3. 数据库迁移（首次）
 在一台能连 RDS 的机器执行（或用 api 镜像跑一次性 Job）：
 ```bash
-DATABASE_URL="postgresql://user:pwd@<rds-host>:5432/joycrm" npx prisma migrate deploy
+DATABASE_URL="mysql://user:pwd@<rds-host>:3306/joycrm" npx prisma migrate deploy
 # 写初始管理员（仅首次）
 DATABASE_URL=... node dist/prisma/seed.js
 ```

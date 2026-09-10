@@ -13,6 +13,7 @@ import { createSessionId, proxyHarnessStream, testHarnessConfiguration } from '.
 
 export const agentRouter = Router()
 agentRouter.use(requireAuth)
+const jsonStringList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
 const superAdminOnly = requireRole(role => role === 'admin')
 const promptLayersSchema = z.object({
@@ -32,10 +33,10 @@ const agentModelSchema = z.object({
 })
 const agentConfigSchema = promptLayersSchema.extend({ models: z.array(agentModelSchema).min(1).max(8) })
 
-async function resolveSubmittedModel(input: z.infer<typeof agentModelSchema>, editable?: z.infer<typeof promptLayersSchema>): Promise<AgentRuntimeConfig> {
+async function resolveSubmittedModel(input: z.infer<typeof agentModelSchema>, tenantId: string, editable?: z.infer<typeof promptLayersSchema>): Promise<AgentRuntimeConfig> {
   const [stored, current] = await Promise.all([
-    input.id ? prisma.agentModelConfiguration.findUnique({ where: { id: input.id } }) : null,
-    loadAgentRuntimeConfig(),
+    input.id ? prisma.agentModelConfiguration.findFirst({ where: { id: input.id, tenantId } }) : null,
+    loadAgentRuntimeConfig(tenantId),
   ])
   const prompts = editable ?? {
     soulPrompt: current.soulPrompt, businessPrompt: current.businessPrompt, responsePrompt: current.responsePrompt,
@@ -50,12 +51,13 @@ async function resolveSubmittedModel(input: z.infer<typeof agentModelSchema>, ed
   }
 }
 
-agentRouter.get('/config', superAdminOnly, ah(async (_req, res) => {
-  await persistEnvironmentAgentConfig()
+agentRouter.get('/config', superAdminOnly, ah(async (req, res) => {
+  const tenantId = req.auth!.user.tenantId
+  if (req.auth!.user.isPlatformAdmin) await persistEnvironmentAgentConfig()
   const [stored, runtime, models] = await Promise.all([
-    prisma.agentConfiguration.findUnique({ where: { id: 'default' } }),
-    loadAgentRuntimeConfig(),
-    prisma.agentModelConfiguration.findMany({ orderBy: [{ isDefault: 'desc' }, { priority: 'asc' }, { createdAt: 'asc' }] }),
+    prisma.agentConfiguration.findUnique({ where: { tenantId } }),
+    loadAgentRuntimeConfig(tenantId),
+    prisma.agentModelConfiguration.findMany({ where: { tenantId }, orderBy: [{ isDefault: 'desc' }, { priority: 'asc' }, { createdAt: 'asc' }] }),
   ])
   res.json({
     provider: stored?.provider ?? 'deepseek-harness',
@@ -75,7 +77,9 @@ agentRouter.get('/config', superAdminOnly, ah(async (_req, res) => {
 
 agentRouter.post('/config/models/test', superAdminOnly, ah(async (req, res) => {
   const input = agentModelSchema.parse(req.body)
-  const runtime = await resolveSubmittedModel(input)
+  const tenantId = req.auth!.user.tenantId
+  if (input.id && !await prisma.agentModelConfiguration.findFirst({ where: { id: input.id, tenantId } })) throw new ApiError(404, '模型配置不存在')
+  const runtime = await resolveSubmittedModel(input, tenantId)
   if (!runtime.apiKey) throw new ApiError(400, '请填写 API Key')
   try {
     const result = await testHarnessConfiguration(runtime)
@@ -98,16 +102,22 @@ agentRouter.put('/config', superAdminOnly, ah(async (req, res) => {
   if (!enabled.length) throw new ApiError(400, '至少启用一个模型')
   if (enabled.filter(item => item.isDefault).length !== 1) throw new ApiError(400, '必须且只能设置一个启用中的默认模型')
   const editable = { soulPrompt: input.soulPrompt, businessPrompt: input.businessPrompt, responsePrompt: input.responsePrompt }
-  const resolved = await Promise.all(input.models.map(item => resolveSubmittedModel(item, editable)))
+  const auth = req.auth!
+  const tenantId = auth.user.tenantId
+  const submittedIds = input.models.flatMap(item => item.id ? [item.id] : [])
+  if (submittedIds.length) {
+    const ownedCount = await prisma.agentModelConfiguration.count({ where: { tenantId, id: { in: submittedIds } } })
+    if (ownedCount !== submittedIds.length) throw new ApiError(404, '部分模型配置不存在或不属于当前租户')
+  }
+  const resolved = await Promise.all(input.models.map(item => resolveSubmittedModel(item, tenantId, editable)))
   if (resolved.some(item => !item.apiKey)) throw new ApiError(400, '每个模型都必须配置 API Key')
   const defaultIndex = input.models.findIndex(item => item.enabled && item.isDefault)
   const defaultRuntime = resolved[defaultIndex]
-  const auth = req.auth!
   const saved = await prisma.$transaction(async tx => {
     const configRow = await tx.agentConfiguration.upsert({
-      where: { id: 'default' },
+      where: { tenantId },
       create: {
-        id: 'default', model: defaultRuntime.model, baseUrl: defaultRuntime.baseUrl,
+        tenantId, model: defaultRuntime.model, baseUrl: defaultRuntime.baseUrl,
         encryptedApiKey: encryptField(defaultRuntime.apiKey), ...editable, updatedBy: auth.authUserId,
       },
       update: {
@@ -125,10 +135,10 @@ agentRouter.put('/config', superAdminOnly, ah(async (req, res) => {
       }
       const row = item.id
         ? await tx.agentModelConfiguration.update({ where: { id: item.id }, data })
-        : await tx.agentModelConfiguration.create({ data })
+        : await tx.agentModelConfiguration.create({ data: { ...data, tenantId } })
       retainedIds.push(row.id)
     }
-    await tx.agentModelConfiguration.deleteMany({ where: { id: { notIn: retainedIds } } })
+    await tx.agentModelConfiguration.deleteMany({ where: { tenantId, id: { notIn: retainedIds } } })
     return configRow
   })
   await writeLog(req, {
@@ -140,9 +150,9 @@ agentRouter.put('/config', superAdminOnly, ah(async (req, res) => {
 }))
 
 function opportunityWhere(auth: NonNullable<Express.Request['auth']>) {
-  if (isAdminRole(auth.user.role)) return {}
-  if (auth.user.role === 'channel') return { channelId: auth.user.channelId ?? '__none__' }
-  return { salesOwnerId: auth.user.id }
+  if (isAdminRole(auth.user.role)) return { tenantId: auth.user.tenantId }
+  if (auth.user.role === 'channel') return { tenantId: auth.user.tenantId, channelId: auth.user.channelId ?? '__none__' }
+  return { tenantId: auth.user.tenantId, salesOwnerId: auth.user.id }
 }
 
 const DASHBOARD_CACHE_TTL_MS = 30 * 60 * 1000
@@ -231,8 +241,8 @@ function salesProgressPlan(intent: SalesQueryIntent, focused: boolean) {
   return plans[intent]
 }
 
-agentRouter.get('/status', ah(async (_req, res) => {
-  const runtime = await loadAgentRuntimeConfig()
+agentRouter.get('/status', ah(async (req, res) => {
+  const runtime = await loadAgentRuntimeConfig(req.auth!.user.tenantId)
   try {
     const response = await fetch(`${config.agentHarnessUrl}/health`, { signal: AbortSignal.timeout(3_000) })
     if (!response.ok) throw new Error(String(response.status))
@@ -245,7 +255,7 @@ agentRouter.get('/status', ah(async (_req, res) => {
 
 agentRouter.get('/dashboard', ah(async (req, res) => {
   const auth = req.auth!
-  const cacheKey = `${auth.user.id}:${auth.user.role}:${auth.user.channelId ?? ''}`
+  const cacheKey = `${auth.user.tenantId}:${auth.user.id}:${auth.user.role}:${auth.user.channelId ?? ''}`
   const cached = dashboardCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) {
     res.json({ ...(cached.data as object), cacheHit: true })
@@ -472,7 +482,7 @@ agentRouter.put('/opportunities/:id/inspection', ah(async (req, res) => {
   const keys = input.groups.map(group => `${group.channel}:${group.groupId}`)
   if (new Set(keys).size !== keys.length) throw new ApiError(400, '同一渠道的群 ID 不能重复')
   const conflicts = input.groups.length ? await prisma.opportunityInspectionBinding.findMany({
-    where: { opportunityId: { not: opportunity.id }, OR: input.groups.map(group => ({ channel: group.channel, groupId: group.groupId })) },
+    where: { tenantId: auth.user.tenantId, opportunityId: { not: opportunity.id }, OR: input.groups.map(group => ({ channel: group.channel, groupId: group.groupId })) },
     select: { groupId: true, groupName: true },
   }) : []
   if (conflicts[0]) throw new ApiError(409, `群“${conflicts[0].groupName}”已绑定其他商机`)
@@ -484,7 +494,7 @@ agentRouter.put('/opportunities/:id/inspection', ah(async (req, res) => {
     for (const group of input.groups) {
       const previous = group.manualId ? existingById.get(group.manualId) : undefined
       await tx.opportunityInspectionBinding.create({ data: {
-        opportunityId: opportunity.id, channel: group.channel,
+        tenantId: auth.user.tenantId, opportunityId: opportunity.id, channel: group.channel,
         sourceGroupId: group.sourceGroupId ?? null, groupId: group.groupId, groupName: group.groupName,
         encryptedSecret: group.secret ? encryptField(group.secret) : previous?.encryptedSecret ?? null,
         enabled: true, updatedBy: auth.user.id,
@@ -514,7 +524,7 @@ function abortWhenClientDisconnects(res: ExpressResponse, controller: AbortContr
   })
 }
 
-async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
+async function relayHarnessStream(upstream: Response, res: ExpressResponse, tenantId: string) {
   if (!upstream.body) return false
   const reader = upstream.body.getReader()
   const decoder = new TextDecoder()
@@ -548,7 +558,7 @@ async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
     if (event.failedModel) failedModels.add(event.failedModel)
     for (const model of event.failedModels ?? []) failedModels.add(model)
     if (event.type === 'error') {
-      if (failedModels.size) void prisma.agentModelConfiguration.updateMany({ where: { model: { in: [...failedModels] } }, data: { lastStatus: 'failed', lastCheckedAt: new Date() } }).catch(() => undefined)
+      if (failedModels.size) void prisma.agentModelConfiguration.updateMany({ where: { tenantId, model: { in: [...failedModels] } }, data: { lastStatus: 'failed', lastCheckedAt: new Date() } }).catch(() => undefined)
       throw new Error('Agent upstream error')
     }
     if (event.type === 'session') return
@@ -567,10 +577,10 @@ async function relayHarnessStream(upstream: Response, res: ExpressResponse) {
     }
     if (buffer.trim()) relayFrame(buffer)
     if (completedModel) {
-      void prisma.agentModelConfiguration.updateMany({ where: { model: completedModel }, data: { lastStatus: 'healthy', lastError: null, lastCheckedAt: new Date() } }).catch(() => undefined)
+      void prisma.agentModelConfiguration.updateMany({ where: { tenantId, model: completedModel }, data: { lastStatus: 'healthy', lastError: null, lastCheckedAt: new Date() } }).catch(() => undefined)
       failedModels.delete(completedModel)
     }
-    if (failedModels.size) void prisma.agentModelConfiguration.updateMany({ where: { model: { in: [...failedModels] } }, data: { lastStatus: 'failed', lastCheckedAt: new Date() } }).catch(() => undefined)
+    if (failedModels.size) void prisma.agentModelConfiguration.updateMany({ where: { tenantId, model: { in: [...failedModels] } }, data: { lastStatus: 'failed', lastCheckedAt: new Date() } }).catch(() => undefined)
     return deliveredText && completed
   } catch {
     await reader.cancel().catch(() => undefined)
@@ -593,7 +603,7 @@ agentRouter.get('/opportunities/:id/context', ah(async (req, res) => {
   })
   if (!opportunity) throw new ApiError(404, '商机不存在或无权访问')
   const fields = [
-    opportunity.customerName, opportunity.companyName, opportunity.industry, opportunity.productInterests.length,
+    opportunity.customerName, opportunity.companyName, opportunity.industry, jsonStringList(opportunity.productInterests).length,
     opportunity.stage, opportunity.amountRange, opportunity.requirementDescription, opportunity.contact?.level,
     opportunity.contact?.department, opportunity.contact?.encName, opportunity.contractNo,
     opportunity.signedDate, opportunity.signedAmount,
@@ -648,7 +658,7 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
     profile: {
       customerName: opportunity.customerName, companyName: opportunity.companyName,
       industry: opportunity.industry, source: opportunity.source, channelName: opportunity.channelName,
-      productInterests: opportunity.productInterests, stage: opportunity.stage,
+      productInterests: jsonStringList(opportunity.productInterests), stage: opportunity.stage,
       stageLabel: stageLabels[opportunity.stage], requirementDescription: opportunity.requirementDescription,
       amountRange: opportunity.amountRange, salesOwnerName: opportunity.salesOwnerName,
       saOwnerName: opportunity.saOwnerName, reportedAt: opportunity.reportedAt, updatedAt: opportunity.updatedAt,
@@ -656,7 +666,7 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
     contact: opportunity.contact ? {
       name: contactName ?? (canViewContactName ? '未填写' : '无权查看'),
       level: opportunity.contact.level, department: opportunity.contact.department,
-      availableChannels: opportunity.contact.contactTypes,
+      availableChannels: jsonStringList(opportunity.contact.contactTypes),
       hasEncryptedContactValue: Boolean(opportunity.contact.encContact),
     } : null,
     protection: {
@@ -716,10 +726,10 @@ agentRouter.post('/opportunities/:id/chat/stream', ah(async (req, res) => {
   res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'reasoning', label: taskPlan.analyze, steps: taskPlan.steps, currentStep: 0 })}\n\n`)
 
   let upstream: Response | undefined
-  try { upstream = await proxyHarnessStream(prompt, sessionId, controller.signal) } catch { /* 使用规则回退 */ }
+  try { upstream = await proxyHarnessStream(prompt, sessionId, controller.signal, auth.user.tenantId) } catch { /* 使用规则回退 */ }
   if (upstream?.ok && upstream.body) {
     res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose, steps: taskPlan.steps, currentStep: 2 })}\n\n`)
-    if (await relayHarnessStream(upstream, res)) {
+    if (await relayHarnessStream(upstream, res, auth.user.tenantId)) {
       res.end()
       return
     }
@@ -745,7 +755,9 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
       orderBy: { updatedAt: 'desc' }, take: 50,
     }),
     prisma.salesSignal.findMany({
-      where: isAdminRole(auth.user.role) ? {} : { opportunity: { is: visibleWhere } },
+      where: isAdminRole(auth.user.role)
+        ? { sourceMessage: { tenantId: auth.user.tenantId } }
+        : { sourceMessage: { tenantId: auth.user.tenantId }, opportunity: { is: visibleWhere } },
       include: { sourceMessage: { select: { chatName: true, senderName: true, createdAt: true } } },
       orderBy: { createdAt: 'desc' }, take: 30,
     }),
@@ -758,7 +770,7 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
     requestUnderstanding: queryUnderstanding,
     opportunities: opportunities.map(item => ({
       id: item.id, customerName: item.customerName, companyName: item.companyName,
-      industry: item.industry, stage: item.stage, productInterests: item.productInterests,
+      industry: item.industry, stage: item.stage, productInterests: jsonStringList(item.productInterests),
       amountRange: item.amountRange, requirementDescription: item.requirementDescription,
       releaseAt: item.releaseAt, lockedPermanently: item.lockedPermanently,
       salesOwnerName: item.salesOwnerName,
@@ -796,12 +808,12 @@ agentRouter.post('/chat/stream', ah(async (req, res) => {
 
   let upstream: Response | undefined
   try {
-    upstream = await proxyHarnessStream(prompt, sessionId, controller.signal)
+    upstream = await proxyHarnessStream(prompt, sessionId, controller.signal, auth.user.tenantId)
   } catch { /* 使用下面的规则回退 */ }
 
   if (upstream?.ok && upstream.body) {
     res.write(`data: ${JSON.stringify({ type: 'progress', stage: 'writing', label: taskPlan.compose, steps: taskPlan.steps, currentStep: 2 })}\n\n`)
-    if (await relayHarnessStream(upstream, res)) {
+    if (await relayHarnessStream(upstream, res, auth.user.tenantId)) {
       res.end()
       return
     }
