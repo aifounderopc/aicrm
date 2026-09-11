@@ -1609,13 +1609,79 @@ function AgentConfigSettings({ desc }: { desc: string }) {
   )
 }
 
+function TenantDialog({ tenant, onClose, onSaved }: { tenant: TenantSummary | null; onClose: () => void; onSaved: () => Promise<void> }) {
+  const isMobile = useMobile()
+  const editing = Boolean(tenant)
+  const [form, setForm] = useState({
+    name: tenant?.name || '',
+    adminName: tenant?.primaryAdmin?.name || '',
+    adminEmail: tenant?.primaryAdmin?.email || '',
+    adminPassword: '',
+    confirmPassword: '',
+  })
+  const [showPassword, setShowPassword] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async () => {
+    if (!form.name.trim() || !form.adminName.trim() || !form.adminEmail.trim()) return setError('请完整填写租户名称和管理员账号')
+    if (!form.adminEmail.includes('@')) return setError('请输入有效的管理员邮箱')
+    if (!editing && !form.adminPassword) return setError('请设置管理员初始密码')
+    if (form.adminPassword) {
+      const checked = validatePassword(form.adminPassword)
+      if (!checked.valid) return setError(checked.error || '密码不符合安全要求')
+      if (form.adminPassword !== form.confirmPassword) return setError('两次输入的密码不一致')
+    }
+    setSubmitting(true)
+    setError('')
+    try {
+      if (tenant) {
+        await tenantApi.update(tenant.id, {
+          name: form.name.trim(), adminName: form.adminName.trim(), adminEmail: form.adminEmail.trim(),
+          ...(form.adminPassword ? { adminPassword: form.adminPassword } : {}),
+        })
+      } else {
+        await tenantApi.create({ name: form.name.trim(), adminName: form.adminName.trim(), adminEmail: form.adminEmail.trim(), adminPassword: form.adminPassword })
+      }
+      await onSaved()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : editing ? '租户信息更新失败' : '企业租户创建失败')
+    } finally { setSubmitting(false) }
+  }
+
+  return <div style={{ position: 'fixed', inset: 0, zIndex: 90, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 20, background: 'rgba(7,27,34,.46)', backdropFilter: 'blur(5px)' }} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div style={{ width: isMobile ? '100%' : 500, maxHeight: '92vh', overflowY: 'auto', padding: isMobile ? '24px 20px 28px' : '27px 30px 29px', borderRadius: isMobile ? '22px 22px 0 0' : 22, background: 'white', boxShadow: '0 28px 80px rgba(3,38,48,.24)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}>
+        <div><div style={{ fontSize: 18, fontWeight: 750, color: '#123d47' }}>{editing ? '编辑企业租户' : '新增企业租户'}</div><div style={{ marginTop: 5, color: '#82999f', fontSize: 12 }}>{editing ? `企业租户 ID：${tenant?.tenantNo} · 仅修改租户名称与管理员账号` : '创建独立数据空间，并同步生成企业管理员账号'}</div></div>
+        <button onClick={onClose} style={{ width: 30, height: 30, border: 0, borderRadius: 9, background: '#f1f5f6', color: '#71868c', cursor: 'pointer' }}>✕</button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
+        <div><label style={{ display: 'block', marginBottom: 6, color: '#355861', fontSize: 12, fontWeight: 650 }}>租户名称 *</label><input style={inputStyle} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="请输入企业租户名称" /></div>
+        <div style={{ height: 1, margin: '2px 0', background: '#edf2f3' }} />
+        <div><label style={{ display: 'block', marginBottom: 6, color: '#355861', fontSize: 12, fontWeight: 650 }}>管理员姓名 *</label><input style={inputStyle} value={form.adminName} onChange={e => setForm({ ...form, adminName: e.target.value })} placeholder="请输入管理员姓名" /></div>
+        <div><label style={{ display: 'block', marginBottom: 6, color: '#355861', fontSize: 12, fontWeight: 650 }}>管理员登录邮箱 *</label><input style={inputStyle} type="email" value={form.adminEmail} onChange={e => setForm({ ...form, adminEmail: e.target.value })} placeholder="admin@company.com" /></div>
+        <div>
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, color: '#355861', fontSize: 12, fontWeight: 650 }}><span>{editing ? '重置管理员密码（选填）' : '管理员初始密码 *'}</span><button type="button" onClick={() => setShowPassword(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: 0, border: 0, background: 'none', color: '#698990', fontSize: 11, cursor: 'pointer' }}>{showPassword ? <EyeOff size={13} /> : <Eye size={13} />}{showPassword ? '隐藏' : '显示'}</button></label>
+          <input style={inputStyle} type={showPassword ? 'text' : 'password'} value={form.adminPassword} onChange={e => setForm({ ...form, adminPassword: e.target.value })} placeholder={editing ? '留空则保持原密码' : PASSWORD_RULE_HINT} />
+          {form.adminPassword && <div style={{ marginTop: 8 }}><StrengthMeter password={form.adminPassword} /></div>}
+        </div>
+        {form.adminPassword && <div><label style={{ display: 'block', marginBottom: 6, color: '#355861', fontSize: 12, fontWeight: 650 }}>确认密码 *</label><input style={{ ...inputStyle, borderColor: form.confirmPassword && form.confirmPassword !== form.adminPassword ? '#fca5a5' : '#e5e5e5' }} type={showPassword ? 'text' : 'password'} value={form.confirmPassword} onChange={e => setForm({ ...form, confirmPassword: e.target.value })} placeholder="再次输入密码" /></div>}
+      </div>
+
+      {error && <div style={{ marginTop: 15, padding: '10px 12px', color: '#c24141', border: '1px solid #fecaca', borderRadius: 10, background: '#fff3f3', fontSize: 12 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 23 }}><button onClick={onClose} disabled={submitting} style={{ flex: 1, padding: '11px', border: '1px solid #dfe8ea', borderRadius: 11, background: 'white', color: '#587078', cursor: 'pointer' }}>取消</button><button onClick={() => void submit()} disabled={submitting} style={{ flex: 1.6, padding: '11px', border: 0, borderRadius: 11, background: 'linear-gradient(135deg,#078da8,#096cc1)', color: 'white', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? .65 : 1 }}>{submitting ? '正在保存…' : editing ? '保存修改' : '确认创建'}</button></div>
+    </div>
+  </div>
+}
+
 function TenantMgmt({ desc }: { desc: string }) {
   const isMobile = useMobile()
   const [tenants, setTenants] = useState<TenantSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
+  const [dialogTenant, setDialogTenant] = useState<TenantSummary | null | undefined>(undefined)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ name: '', code: '', adminName: '', adminEmail: '', adminPassword: '' })
 
   const load = async () => {
     setLoading(true)
@@ -1625,20 +1691,6 @@ function TenantMgmt({ desc }: { desc: string }) {
   }
   useEffect(() => { void load() }, [])
 
-  const create = async () => {
-    if (!form.name || !form.code || !form.adminName || !form.adminEmail || !form.adminPassword) return setError('请完整填写租户与管理员信息')
-    const passwordCheck = validatePassword(form.adminPassword)
-    if (!passwordCheck.valid) return setError(passwordCheck.error || '密码不符合安全要求')
-    setCreating(true)
-    try {
-      await tenantApi.create(form)
-      setForm({ name: '', code: '', adminName: '', adminEmail: '', adminPassword: '' })
-      setError('')
-      await load()
-    } catch (e) { setError(e instanceof Error ? e.message : '创建失败') }
-    finally { setCreating(false) }
-  }
-
   const toggle = async (tenant: TenantSummary) => {
     try {
       await tenantApi.update(tenant.id, { status: tenant.status === 'active' ? 'disabled' : 'active' })
@@ -1647,32 +1699,23 @@ function TenantMgmt({ desc }: { desc: string }) {
   }
 
   return <div>
-    <div style={{ marginBottom: 16 }}><div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>企业租户管理</div><div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>{desc}</div></div>
-    <section style={{ padding: isMobile ? 16 : 20, borderRadius: 16, background: 'rgba(255,255,255,.9)', border: '1px solid #e5eef2', marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 14, fontWeight: 700 }}><Plus size={16} color="#0891b2" />新增企业租户</div>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr .8fr 1fr 1.2fr 1fr', gap: 10 }}>
-        <input style={inputStyle} placeholder="企业名称" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-        <input style={inputStyle} placeholder="租户编码" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '') })} />
-        <input style={inputStyle} placeholder="管理员姓名" value={form.adminName} onChange={e => setForm({ ...form, adminName: e.target.value })} />
-        <input style={inputStyle} placeholder="管理员邮箱" type="email" value={form.adminEmail} onChange={e => setForm({ ...form, adminEmail: e.target.value })} />
-        <input style={inputStyle} placeholder="初始密码" type="password" value={form.adminPassword} onChange={e => setForm({ ...form, adminPassword: e.target.value })} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 12 }}>
-        <span style={{ fontSize: 11, color: error ? '#dc2626' : '#94a3b8' }}>{error || '创建后将自动生成该租户的企业管理员账号，数据与其他租户隔离。'}</span>
-        <button onClick={() => void create()} disabled={creating} style={{ padding: '9px 16px', border: 0, borderRadius: 10, background: '#0891b2', color: 'white', fontWeight: 700, cursor: creating ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>{creating ? '创建中…' : '创建租户'}</button>
-      </div>
-    </section>
+    <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', gap: 14, marginBottom: 16 }}>
+      <div><div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>企业租户管理</div><div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>{desc}</div></div>
+      <button onClick={() => setDialogTenant(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, padding: '9px 14px', border: 0, borderRadius: 10, background: 'linear-gradient(135deg,#078da8,#096cc1)', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', boxShadow: '0 5px 14px rgba(9,108,193,.18)' }}><Plus size={15} />新增企业租户</button>
+    </div>
+    {error && <div style={{ marginBottom: 13, padding: '10px 12px', color: '#c24141', border: '1px solid #fecaca', borderRadius: 10, background: '#fff3f3', fontSize: 12 }}>{error}</div>}
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-      {loading ? <div style={{ padding: 30, color: '#64748b' }}><LoaderCircle className="spin" size={18} /> 正在加载</div> : tenants.map(tenant => <section key={tenant.id} style={{ padding: 18, borderRadius: 16, background: 'rgba(255,255,255,.92)', border: '1px solid #e5eef2', boxShadow: '0 4px 16px rgba(30,80,100,.05)' }}>
+      {loading ? <div style={{ padding: 30, color: '#64748b' }}><LoaderCircle className="spin" size={18} /> 正在加载</div> : tenants.map(tenant => <section key={tenant.id} onClick={() => setDialogTenant(tenant)} title="点击修改租户名称和管理员账号" style={{ padding: 18, borderRadius: 16, background: 'rgba(255,255,255,.92)', border: '1px solid #e5eef2', boxShadow: '0 4px 16px rgba(30,80,100,.05)', cursor: 'pointer', transition: 'transform .15s, box-shadow .15s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 9px 24px rgba(30,80,100,.1)' }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(30,80,100,.05)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center', background: '#e6f8fc', color: '#087d9b' }}><Building2 size={20} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}><strong style={{ fontSize: 15 }}>{tenant.name}</strong>{tenant.isDefault && <span style={{ padding: '3px 7px', borderRadius: 7, background: '#dcfce7', color: '#047857', fontSize: 10, fontWeight: 700 }}>默认租户</span>}<span style={{ padding: '3px 7px', borderRadius: 7, background: tenant.status === 'active' ? '#e0f2fe' : '#f1f5f9', color: tenant.status === 'active' ? '#0369a1' : '#64748b', fontSize: 10 }}>{tenant.status === 'active' ? '运行中' : '已停用'}</span></div><div style={{ marginTop: 4, color: '#94a3b8', fontSize: 11 }}>{tenant.code}</div></div>
-          {!tenant.isDefault && <button onClick={() => void toggle(tenant)} style={{ padding: '6px 10px', border: '1px solid #dbe5ea', borderRadius: 8, background: 'white', color: '#475569', fontSize: 11, cursor: 'pointer' }}>{tenant.status === 'active' ? '停用' : '启用'}</button>}
+          <div style={{ flex: 1, minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}><strong style={{ fontSize: 15 }}>{tenant.name}</strong>{tenant.isDefault && <span style={{ padding: '3px 7px', borderRadius: 7, background: '#dcfce7', color: '#047857', fontSize: 10, fontWeight: 700 }}>默认租户</span>}<span style={{ padding: '3px 7px', borderRadius: 7, background: tenant.status === 'active' ? '#e0f2fe' : '#f1f5f9', color: tenant.status === 'active' ? '#0369a1' : '#64748b', fontSize: 10 }}>{tenant.status === 'active' ? '运行中' : '已停用'}</span></div><div style={{ marginTop: 6, color: '#94a3b8', fontSize: 11 }}>企业租户 ID：<code style={{ color: '#47636c', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontWeight: 700 }}>{tenant.tenantNo}</code></div></div>
+          {!tenant.isDefault && <button onClick={e => { e.stopPropagation(); void toggle(tenant) }} style={{ padding: '6px 10px', border: '1px solid #dbe5ea', borderRadius: 8, background: 'white', color: '#475569', fontSize: 11, cursor: 'pointer' }}>{tenant.status === 'active' ? '停用' : '启用'}</button>}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>{[['账号', tenant._count.users], ['渠道', tenant._count.channels], ['商机', tenant._count.opportunities]].map(([label, value]) => <div key={String(label)} style={{ padding: '10px 8px', textAlign: 'center', borderRadius: 10, background: '#f8fafc' }}><div style={{ fontSize: 18, fontWeight: 750, color: '#0f172a' }}>{value}</div><div style={{ fontSize: 10, color: '#94a3b8' }}>{label}</div></div>)}</div>
         <div style={{ marginTop: 13, paddingTop: 12, borderTop: '1px solid #eef2f4', fontSize: 12, color: '#64748b' }}>企业管理员：{tenant.primaryAdmin ? `${tenant.primaryAdmin.name} · ${tenant.primaryAdmin.email}` : '尚未配置'}</div>
       </section>)}
     </div>
+    {dialogTenant !== undefined && <TenantDialog tenant={dialogTenant} onClose={() => setDialogTenant(undefined)} onSaved={load} />}
   </div>
 }
 

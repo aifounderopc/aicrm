@@ -10,6 +10,7 @@ import SalesPartner from './pages/SalesPartner'
 import Connectors from './pages/Connectors'
 import Performance from './pages/Performance'
 import OpportunityPool from './pages/OpportunityPool'
+import Profile from './pages/Profile'
 import { useStore } from './store'
 import { useEffect, useState } from 'react'
 import { setUnauthorizedHandler } from './api'
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/opportunity/:id" element={<OpportunityDetail />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/profile" element={<Profile />} />
         </Routes>
       </Layout>
     </BrowserRouter>

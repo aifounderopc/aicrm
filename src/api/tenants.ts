@@ -2,8 +2,8 @@ import { api } from './client'
 
 export interface TenantSummary {
   id: string
+  tenantNo: number
   name: string
-  code: string
   status: 'active' | 'disabled'
   isDefault: boolean
   createdAt: string
@@ -13,14 +13,21 @@ export interface TenantSummary {
 }
 export interface CreateTenantInput {
   name: string
-  code: string
   adminName: string
   adminEmail: string
   adminPassword: string
 }
 
+export interface UpdateTenantInput {
+  name?: string
+  status?: 'active' | 'disabled'
+  adminName?: string
+  adminEmail?: string
+  adminPassword?: string
+}
+
 export const tenantApi = {
   list: () => api.get<TenantSummary[]>('/tenants'),
   create: (input: CreateTenantInput) => api.post<TenantSummary>('/tenants', input),
-  update: (id: string, input: Partial<Pick<TenantSummary, 'name' | 'code' | 'status'>>) => api.patch<TenantSummary>(`/tenants/${id}`, input),
+  update: (id: string, input: UpdateTenantInput) => api.patch<TenantSummary>(`/tenants/${id}`, input),
 }

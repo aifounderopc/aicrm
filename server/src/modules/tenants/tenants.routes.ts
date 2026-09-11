@@ -26,7 +26,6 @@ tenantRouter.get('/', ah(async (req, res) => {
 }))
 const createSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  code: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,39}$/, '租户编码仅支持 2-40 位小写字母、数字、下划线和短横线'),
   adminName: z.string().trim().min(1).max(40),
   adminEmail: z.string().email(),
   adminPassword: z.string(),
@@ -37,15 +36,11 @@ tenantRouter.post('/', ah(async (req, res) => {
   const input = createSchema.parse(req.body)
   const password = validatePasswordStrength(input.adminPassword)
   if (!password.valid) throw new ApiError(400, password.error!)
-  const [codeExists, emailExists] = await Promise.all([
-    prisma.tenant.findUnique({ where: { code: input.code } }),
-    prisma.user.findUnique({ where: { email: input.adminEmail.toLowerCase() } }),
-  ])
-  if (codeExists) throw new ApiError(409, '租户编码已存在')
+  const emailExists = await prisma.user.findUnique({ where: { email: input.adminEmail.toLowerCase() } })
   if (emailExists) throw new ApiError(409, '管理员邮箱已被使用')
 
   const created = await prisma.$transaction(async tx => {
-    const tenant = await tx.tenant.create({ data: { name: input.name, code: input.code } })
+    const tenant = await tx.tenant.create({ data: { name: input.name, code: `internal-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` } })
     const admin = await tx.user.create({
       data: {
         tenantId: tenant.id,
@@ -59,14 +54,16 @@ tenantRouter.post('/', ah(async (req, res) => {
     })
     return { ...tenant, primaryAdmin: admin, _count: { users: 1, channels: 0, opportunities: 0 } }
   })
-  await writeLog(req, { actorId: req.auth!.authUserId, actorName: req.auth!.user.name, action: '新增企业租户', detail: `${input.name}（${input.code}）`, targetType: 'tenant', targetId: created.id })
+  await writeLog(req, { actorId: req.auth!.authUserId, actorName: req.auth!.user.name, action: '新增企业租户', detail: `${input.name}（企业租户 ID：${created.tenantNo}）`, targetType: 'tenant', targetId: created.id })
   res.status(201).json(created)
 }))
 
 const updateSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
-  code: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,39}$/).optional(),
   status: z.enum(['active', 'disabled']).optional(),
+  adminName: z.string().trim().min(1).max(40).optional(),
+  adminEmail: z.string().email().optional(),
+  adminPassword: z.string().optional(),
 })
 
 tenantRouter.patch('/:id', ah(async (req, res) => {
@@ -76,8 +73,35 @@ tenantRouter.patch('/:id', ah(async (req, res) => {
   if (!tenant) throw new ApiError(404, '企业租户不存在')
   if (tenant.isDefault && input.status === 'disabled') throw new ApiError(409, '默认租户不能停用')
   if (req.auth!.authTenantId === tenant.id && input.status === 'disabled') throw new ApiError(409, '不能停用当前登录账号所属租户')
-  if (input.code && input.code !== tenant.code && await prisma.tenant.findUnique({ where: { code: input.code } })) throw new ApiError(409, '租户编码已存在')
-  const updated = await prisma.tenant.update({ where: { id: tenant.id }, data: input })
-  await writeLog(req, { actorId: req.auth!.authUserId, actorName: req.auth!.user.name, action: '更新企业租户', detail: `${updated.name}（${updated.code}）`, targetType: 'tenant', targetId: updated.id })
+  const admin = await prisma.user.findFirst({ where: { tenantId: tenant.id, role: 'admin' }, orderBy: { createdAt: 'asc' } })
+  const changesAdmin = input.adminName !== undefined || input.adminEmail !== undefined || Boolean(input.adminPassword)
+  if (changesAdmin && !admin) throw new ApiError(409, '该租户尚未配置企业管理员')
+  if (input.adminPassword) {
+    const password = validatePasswordStrength(input.adminPassword)
+    if (!password.valid) throw new ApiError(400, password.error!)
+  }
+  if (input.adminEmail) {
+    const emailOwner = await prisma.user.findUnique({ where: { email: input.adminEmail.toLowerCase() } })
+    if (emailOwner && emailOwner.id !== admin?.id) throw new ApiError(409, '管理员邮箱已被使用')
+  }
+
+  const updated = await prisma.$transaction(async tx => {
+    const savedTenant = await tx.tenant.update({
+      where: { id: tenant.id },
+      data: { ...(input.name !== undefined ? { name: input.name } : {}), ...(input.status !== undefined ? { status: input.status } : {}) },
+    })
+    if (admin && changesAdmin) {
+      await tx.user.update({
+        where: { id: admin.id },
+        data: {
+          ...(input.adminName !== undefined ? { name: input.adminName } : {}),
+          ...(input.adminEmail !== undefined ? { email: input.adminEmail.toLowerCase() } : {}),
+          ...(input.adminPassword ? { passwordHash: await hashPassword(input.adminPassword), mustChangePwd: true } : {}),
+        },
+      })
+    }
+    return savedTenant
+  })
+  await writeLog(req, { actorId: req.auth!.authUserId, actorName: req.auth!.user.name, action: '更新企业租户', detail: `${updated.name}（企业租户 ID：${updated.tenantNo}）`, targetType: 'tenant', targetId: updated.id })
   res.json(updated)
 }))

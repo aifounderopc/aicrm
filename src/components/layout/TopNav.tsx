@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Bell, Plus, ChevronDown, Menu, X, LogOut, Repeat } from 'lucide-react'
+import { Bell, Plus, ChevronDown, Menu, X, LogOut, Repeat, UserRound } from 'lucide-react'
 import { useStore } from '../../store'
 import { roleName, isAdminRole } from '../../utils'
 import { useState, useEffect } from 'react'
@@ -263,6 +263,21 @@ export default function TopNav() {
                       </div>
                     )}
 
+                    <button onClick={() => { navigate('/profile'); setShowUserMenu(false) }} style={{
+                      display: 'flex', alignItems: 'center', gap: 9, width: '100%',
+                      padding: '10px 12px', borderRadius: 12, border: 'none', cursor: 'pointer', textAlign: 'left',
+                      background: 'transparent', color: '#174c59', fontSize: 13.5, fontWeight: 600,
+                      transition: 'background 0.12s',
+                    }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(14,157,191,0.08)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                    >
+                      <span style={{ width: 28, height: 28, borderRadius: 9, background: 'rgba(14,157,191,0.1)', color: '#0e8eaa', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <UserRound size={14} />
+                      </span>
+                      个人中心
+                    </button>
+
                     <button onClick={() => { logout() }} style={{
                       display: 'flex', alignItems: 'center', gap: 9, width: '100%',
                       padding: '10px 12px', borderRadius: 12, border: 'none', cursor: 'pointer', textAlign: 'left',
@@ -369,6 +384,16 @@ export default function TopNav() {
                 </NavLink>
               ))}
             </nav>
+
+            <div style={{ padding: '6px 16px 10px' }}>
+              <button onClick={() => { navigate('/profile'); setDrawerOpen(false) }} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%',
+                padding: '12px', borderRadius: 12, border: '1.5px solid rgba(14,120,160,0.18)', cursor: 'pointer',
+                background: 'rgba(14,157,191,0.05)', color: '#126b80', fontSize: 14, fontWeight: 650,
+              }}>
+                <UserRound size={15} /> 个人中心
+              </button>
+            </div>
 
             {/* Report CTA */}
             <div style={{ padding: '16px' }}>

@@ -14,8 +14,8 @@ export const authRouter = Router()
 // 登录限频：同 IP 10 分钟最多 10 次
 const loginLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false })
 
-function publicUser(u: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; tenantId: string; isPlatformAdmin: boolean; tenant?: { name: string }; mustChangePwd?: boolean }) {
-  return { id: u.id, name: u.name, email: u.email, role: u.role, channelId: u.channelId, isJdManager: u.isJdManager, tenantId: u.tenantId, tenantName: u.tenant?.name, isPlatformAdmin: u.isPlatformAdmin }
+function publicUser(u: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; tenantId: string; isPlatformAdmin: boolean; tenant?: { name: string; tenantNo: number }; mustChangePwd?: boolean }) {
+  return { id: u.id, name: u.name, email: u.email, role: u.role, channelId: u.channelId, isJdManager: u.isJdManager, tenantId: u.tenantId, tenantNo: u.tenant?.tenantNo, tenantName: u.tenant?.name, isPlatformAdmin: u.isPlatformAdmin }
 }
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) })

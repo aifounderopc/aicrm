@@ -23,4 +23,4 @@ export type { DraftImConnectionStatus, DraftImProvider, FeishuConnectionStatus, 
 export { agentApi } from './agent'
 export type { AgentDashboard, AgentSignal, AgentStatus, AgentStreamEvent, OpportunityAdvisorContext } from './agent'
 export { tenantApi } from './tenants'
-export type { TenantSummary, CreateTenantInput } from './tenants'
+export type { TenantSummary, CreateTenantInput, UpdateTenantInput } from './tenants'

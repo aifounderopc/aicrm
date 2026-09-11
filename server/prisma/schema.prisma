@@ -52,6 +52,7 @@ enum RenewalStatus {
 
 model Tenant {
   id        String   @id @default(cuid())
+  tenantNo  Int      @unique @default(autoincrement()) @map("tenant_no")
   name      String
   code      String   @unique
   status    String   @default("active")

@@ -10,7 +10,7 @@ export interface AuthContext {
   authTenantId: string
   authIsPlatformAdmin: boolean
   // 当前生效身份（代理时为被代理账号，否则同 authUser）
-  user: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; tenantId: string; tenantName: string; isPlatformAdmin: boolean }
+  user: { id: string; name: string; email: string; role: string; channelId: string | null; isJdManager: boolean; tenantId: string; tenantNo: number; tenantName: string; isPlatformAdmin: boolean }
   isProxying: boolean
 }
 
@@ -48,7 +48,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       user: {
         id: effective.id, name: effective.name, email: effective.email,
         role: effective.role, channelId: effective.channelId, isJdManager: effective.isJdManager,
-        tenantId: effective.tenantId, tenantName: effective.tenant.name, isPlatformAdmin: effective.isPlatformAdmin,
+        tenantId: effective.tenantId, tenantNo: effective.tenant.tenantNo, tenantName: effective.tenant.name, isPlatformAdmin: effective.isPlatformAdmin,
       },
     }
     next()
